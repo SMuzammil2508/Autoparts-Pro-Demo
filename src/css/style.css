@@ -597,11 +597,20 @@ html, body {
 }
 
 .horizontal-ribbon {
-  display: flex;
-  align-items: center;
-  overflow-x: auto;
-  scroll-behavior: smooth;
-  -webkit-overflow-scrolling: touch;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scroll-behavior: smooth !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: none !important;
+  gap: 0.375rem !important;
+  width: 100% !important;
+}
+
+.horizontal-ribbon::-webkit-scrollbar {
+  display: none !important;
 }
 
 /* Keyboard Shortcut KBD Badge */
@@ -645,5 +654,574 @@ html, body {
   .batch-dock-container {
     bottom: 12px;
     width: calc(100% - 16px);
+  }
+}
+
+/* ================= COMPREHENSIVE RESPONSIVE LAYOUT ENGINE ================= */
+
+/* 1. Prevent accidental horizontal viewport leakage */
+html, body {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden !important;
+}
+
+/* 2. Global flexbox & grid item shrinkage safety */
+.part-card, .workspace-view, header, nav, main, #products-grid, .modal-enter {
+  min-width: 0;
+}
+
+/* 3. Header & Navigation Responsive Architecture */
+header {
+  width: 100% !important;
+  max-width: 100vw !important;
+}
+
+header > div {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+#workspace-nav {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: none !important;
+  scroll-behavior: smooth !important;
+}
+
+#workspace-nav::-webkit-scrollbar {
+  display: none !important;
+}
+
+.workspace-nav-tab {
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+/* Wide Viewports (>= 1280px): 5-module horizontal navigation in a single row */
+@media screen and (min-width: 1280px) {
+  header > div {
+    flex-wrap: nowrap !important;
+  }
+
+  header nav#workspace-nav {
+    order: 2 !important;
+    flex: 1 1 auto !important;
+    max-width: 900px !important;
+    margin: 0 0.5rem !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    gap: 0.25rem !important;
+  }
+
+  .workspace-nav-tab {
+    flex: 1 1 auto !important;
+    justify-content: center !important;
+    padding: 0.4rem 0.55rem !important;
+    font-size: 0.8125rem !important;
+    min-width: max-content !important;
+    gap: 0.3rem !important;
+  }
+
+  .workspace-nav-tab span {
+    white-space: nowrap !important;
+    text-overflow: clip !important;
+  }
+}
+
+/* Ultrawide Viewports (>= 1680px): Expanded breathing room */
+@media screen and (min-width: 1680px) {
+  header nav#workspace-nav {
+    max-width: 1040px !important;
+    gap: 0.375rem !important;
+  }
+
+  .workspace-nav-tab {
+    padding: 0.5rem 0.85rem !important;
+    font-size: 0.875rem !important;
+    gap: 0.45rem !important;
+  }
+
+  .workspace-nav-tab span {
+    white-space: nowrap !important;
+    text-overflow: clip !important;
+  }
+}
+
+/* Narrower Viewports (< 1280px): Responsive 2-row layout with full-width horizontal scroll */
+@media screen and (max-width: 1279px) {
+  header > div {
+    flex-wrap: wrap !important;
+    gap: 0.5rem 0.75rem !important;
+  }
+
+  header nav#workspace-nav {
+    order: 3 !important;
+    width: 100% !important;
+    margin-top: 0.25rem !important;
+    justify-content: flex-start !important;
+  }
+
+  .workspace-nav-tab {
+    flex: 0 0 auto !important;
+    padding: 0.4rem 0.75rem !important;
+  }
+}
+
+@media screen and (max-width: 640px) {
+  header {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+
+  .workspace-nav-tab {
+    padding: 0.35rem 0.55rem !important;
+    font-size: 0.75rem !important;
+    gap: 0.25rem !important;
+  }
+
+  .workspace-nav-tab i {
+    width: 0.875rem !important;
+    height: 0.875rem !important;
+  }
+}
+
+/* 4. Fluid CSS Grid for AutoParts Catalog */
+#products-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) !important;
+  gap: 1rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+/* Wide monitors: 5 columns */
+@media screen and (min-width: 1680px) {
+  #products-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Medium-large desktop monitors (1441px to 1679px, e.g. 1600px): 4 columns */
+@media screen and (min-width: 1441px) and (max-width: 1679px) {
+  #products-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Laptop screens (1025px to 1440px, including 1366px and 1280px): exactly 3 columns */
+@media screen and (min-width: 1025px) and (max-width: 1440px) {
+  #products-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Tablets (641px to 1024px): 2 columns */
+@media screen and (min-width: 641px) and (max-width: 1024px) {
+  #products-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media screen and (max-width: 640px) {
+  #products-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+  }
+}
+
+/* 5. Product Cards Responsive Sizing & Unified Flex Layout */
+.part-card {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 1.125rem !important;
+  border-radius: 1rem !important;
+  box-sizing: border-box !important;
+  overflow-wrap: break-word !important;
+  word-break: normal !important;
+}
+
+.part-card * {
+  min-width: 0;
+}
+
+.part-card-upper {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 0 auto !important;
+  width: 100% !important;
+}
+
+/* 1 & 2: Header row with Checkbox, Brand, Category on left; Stock status pinned to right */
+.part-card-header-row {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.part-card-brand-category-group {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.375rem !important;
+  flex-wrap: wrap !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+
+.stock-status-badge-container {
+  display: inline-flex !important;
+  align-items: center !important;
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* 3. Sub-row for SKU & Barcode */
+.part-card-sub-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.375rem !important;
+  flex-wrap: wrap !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.part-card .part-number-pill,
+.part-card .part-barcode-pill,
+.part-card [title*="Barcode"],
+.part-card .font-mono {
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  max-width: 100% !important;
+}
+
+/* 4. Floor stock indicators row */
+.part-card-floor-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.375rem !important;
+  flex-wrap: wrap !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.floor-stock-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.25rem !important;
+  white-space: nowrap !important;
+  letter-spacing: 0.01em;
+  user-select: none;
+  font-size: 0.75rem !important;
+  line-height: 1.1rem !important;
+  padding: 0.15rem 0.55rem !important;
+  border-radius: 0.375rem !important;
+  background-color: rgba(15, 23, 42, 0.9) !important;
+  border: 1px solid rgba(51, 65, 85, 0.75) !important;
+  color: #cbd5e1 !important;
+}
+
+.floor-stock-pill b {
+  color: #34d399 !important;
+}
+
+.floor-stock-pill.floor-stock-pill-empty {
+  border-color: rgba(30, 41, 59, 0.8) !important;
+  color: #64748b !important;
+}
+
+.floor-stock-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  white-space: nowrap !important;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+/* 5. Product title */
+.part-card h3,
+.part-card .part-card-title {
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  overflow-wrap: break-word !important;
+  word-break: break-word !important;
+  line-height: 1.35 !important;
+  color: #f1f5f9 !important;
+}
+
+/* 6. Brand and unit line */
+.part-card-brand-unit {
+  font-size: 0.75rem !important;
+  color: #94a3b8 !important;
+}
+
+/* 7. Compatible cars panel */
+.part-card-fitment-panel {
+  font-size: 0.75rem !important;
+  line-height: 1.25 !important;
+}
+
+/* Floor stock storage boxes (legacy support) */
+.part-card .grid-cols-3 {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 0.375rem !important;
+  min-width: 0 !important;
+}
+
+.part-card .grid-cols-3 > div {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  padding: 0.375rem 0.25rem !important;
+}
+
+/* 8 & 9. Lower section: Pricing & Action buttons anchored to bottom */
+.part-card-lower {
+  margin-top: auto !important;
+  width: 100% !important;
+}
+
+.part-card-pricing-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+  width: 100% !important;
+}
+
+.part-card-actions-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.375rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.part-card .btn-quick-sell {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+  padding-left: 0.625rem !important;
+  padding-right: 0.625rem !important;
+  height: 38px !important;
+  font-size: 0.8125rem !important;
+}
+
+.part-card .btn-quick-sell span {
+  white-space: nowrap !important;
+}
+
+.part-card .btn-touch {
+  flex-shrink: 0 !important;
+}
+
+/* 6. Search Bar & Filter Controls Responsiveness */
+#search-input {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+@media screen and (max-width: 640px) {
+  #search-input {
+    padding-right: 145px !important;
+    font-size: 0.8125rem !important;
+  }
+}
+
+@media screen and (min-width: 641px) and (max-width: 1024px) {
+  #search-input {
+    padding-right: 215px !important;
+  }
+}
+
+.status-tab-btn {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+/* Compact vertical spacing between Search, Brands, Categories, and Status tabs */
+#workspace-view-counter > section:first-child {
+  row-gap: 0.375rem !important;
+}
+
+#brand-chips-container,
+#category-chips-container {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: none !important;
+  scroll-behavior: smooth !important;
+  width: 100% !important;
+  padding-top: 0.125rem !important;
+  padding-bottom: 0.125rem !important;
+}
+
+#brand-chips-container::-webkit-scrollbar,
+#category-chips-container::-webkit-scrollbar {
+  display: none !important;
+}
+
+#btn-quick-manage-brands,
+#btn-quick-manage-categories {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+/* 7. Universal Modal & Drawer Viewport Protections */
+.modal-enter {
+  max-height: calc(100vh - 2rem) !important;
+  max-width: calc(100vw - 1rem) !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+@media screen and (max-width: 640px) {
+  .modal-enter {
+    max-height: calc(100vh - 1rem) !important;
+    max-width: calc(100vw - 0.75rem) !important;
+    border-radius: 1rem !important;
+  }
+
+  .modal-enter .p-5, 
+  .modal-enter .p-6 {
+    padding: 0.875rem 1rem !important;
+  }
+
+  /* Responsive stats tickers in modals and outflow */
+  #workspace-view-outflow .grid-cols-3,
+  #daily-outflow-modal .grid-cols-3,
+  #workspace-view-claims .grid-cols-3 {
+    grid-template-columns: 1fr !important;
+    gap: 0.5rem !important;
+  }
+}
+
+/* Responsive Cart Drawer */
+#cart-drawer {
+  max-width: 100vw !important;
+}
+
+@media screen and (max-width: 480px) {
+  #cart-drawer {
+    width: 100% !important;
+  }
+}
+
+/* Responsive Tables Inside Horizontal Scroll Containers */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch !important;
+}
+
+#workspace-view-outflow table,
+#workspace-view-claims table,
+#workspace-view-pricing table,
+#workspace-view-on-order table,
+#daily-outflow-modal table,
+#defective-claims-modal table,
+#price-revision-modal table {
+  min-width: 580px;
+}
+
+#pos-receipt-printable-area table {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+/* ================= POS CART DRAWER (PHASE 2 VISUAL SHELL) ================= */
+#cart-drawer {
+  will-change: transform;
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#cart-drawer.cart-drawer-open {
+  transform: translateX(0) !important;
+}
+
+#cart-drawer-backdrop {
+  transition: opacity 280ms ease, visibility 280ms ease;
+}
+
+#cart-drawer-backdrop.backdrop-active {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
+
+/* Light theme support for Cart Drawer */
+[data-theme="light"] #cart-drawer {
+  background-color: #ffffff !important;
+  border-left-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] #cart-drawer .bg-slate-900,
+[data-theme="light"] #cart-drawer .bg-slate-900\/90,
+[data-theme="light"] #cart-drawer .bg-slate-900\/80,
+[data-theme="light"] #cart-drawer .bg-slate-900\/50,
+[data-theme="light"] #cart-drawer .bg-slate-950,
+[data-theme="light"] #cart-drawer .bg-slate-950\/60 {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+[data-theme="light"] #cart-drawer .text-slate-100,
+[data-theme="light"] #cart-drawer .text-slate-200 {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] #cart-drawer .text-slate-400 {
+  color: #64748b !important;
+}
+
+/* POS Digital Receipt Print Styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #pos-receipt-modal,
+  #pos-receipt-modal #pos-receipt-printable-area,
+  #pos-receipt-modal #pos-receipt-printable-area * {
+    visibility: visible;
+  }
+  #pos-receipt-modal {
+    position: absolute;
+    inset: 0;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    justify-content: center;
+  }
+  #pos-receipt-printable-area {
+    width: 100% !important;
+    max-width: 440px !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 12px !important;
+  }
+  #pos-receipt-printable-area * {
+    color: #000000 !important;
+    border-color: #cbd5e1 !important;
+  }
+  .no-print {
+    display: none !important;
   }
 }

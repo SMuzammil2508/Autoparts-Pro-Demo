@@ -30,6 +30,10 @@ export class SettingsManager {
       stickerFormatSelect.value = this.app.settings.stickerFormat || 'dynamic_code';
     }
 
+    if (this.app && typeof this.app.updateCashierAuthUi === 'function') {
+      this.app.updateCashierAuthUi();
+    }
+
     modal.classList.remove('hidden');
     modal.classList.add('flex');
     if (window.lucide) lucide.createIcons();
@@ -148,7 +152,9 @@ export class SettingsManager {
         const data = JSON.parse(e.target.result);
         if (data.products && Array.isArray(data.products)) {
           this.app.products = data.products;
-          this.app.storage.saveProducts(this.app.products);
+          // Intentional Full-Catalog Restore: User is manually importing a complete database backup JSON file.
+          // In this specific administrative operation, all restored items are intentionally saved.
+          this.app.storage.saveProducts(this.app.products, null);
         }
         if (data.vehicleBrands && Array.isArray(data.vehicleBrands)) {
           this.app.vehicleBrands = data.vehicleBrands;

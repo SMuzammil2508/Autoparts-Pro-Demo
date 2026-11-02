@@ -204,6 +204,7 @@ export class PriceRevisionManager {
     };
 
     let affectedCount = 0;
+    const affectedPartIds = [];
     const desc = `Bulk Revision: ${targetBrand} (${targetCat}) ${type.includes('inc') ? '+' : '-'}${value}${type.includes('percent') ? '%' : '₹'}`;
 
     // Save snapshot before mutating
@@ -221,11 +222,12 @@ export class PriceRevisionManager {
           p.costPrice = calcNewPrice(p.costPrice || 0);
         }
         p.lastPriceUpdated = new Date().toISOString();
+        affectedPartIds.push(p.id);
         affectedCount++;
       }
     });
 
-    this.app.saveProducts();
+    this.app.saveProducts(affectedPartIds);
     this.app.sound.playSaleChime();
     this.app.showToast(`Successfully revised prices for ${affectedCount} parts! Backup snapshot saved.`, "success");
 
@@ -651,8 +653,12 @@ export class PriceRevisionManager {
       const driveShaftItems = this.app.products.filter(p => (p.partNumber || '').startsWith('TDSFT') || p.category === 'Drive Shaft & Axle');
       if (driveShaftItems.length > 0) {
         if (confirm(`Remove ${driveShaftItems.length} Drive Shaft parts added in the recent import?`)) {
+          const removedIds = driveShaftItems.map(p => p.id);
           this.app.products = this.app.products.filter(p => !((p.partNumber || '').startsWith('TDSFT') || p.category === 'Drive Shaft & Axle'));
-          this.app.saveProducts();
+          // Persist updated local catalog without performing an unconstrained cloud upsert
+          this.app.storage.saveProducts(this.app.products, []);
+          // Delete removed parts from cloud individually
+          removedIds.forEach(id => this.app.storage.deleteProduct(id));
           this.app.sound.playTrashSound ? this.app.sound.playTrashSound() : this.app.sound.playClick();
           this.app.showToast(`Removed ${driveShaftItems.length} imported Drive Shaft items from catalog.`, "success");
           this.app.renderProducts();
@@ -859,6 +865,7 @@ export class PriceRevisionManager {
     });
 
     // 2. Insert new unmatched items with Automotive Title Intelligence NLP
+    const newPartIds = [];
     if (unmatched.length > 0) {
       unmatched.forEach(u => {
         const autoDetails = this.extractAutomotiveDetails(u.rawName, u.rawSku, u.rawCategory, u.rawBrand);
@@ -883,11 +890,16 @@ export class PriceRevisionManager {
           minStockAlert: (sellingPrice >= 3000) ? 1 : 2,
           unit: 'Piece'
         };
+        newPartIds.push(newPart.id);
         this.app.products.unshift(newPart);
       });
     }
 
-    this.app.saveProducts();
+    const affectedIds = [
+      ...matched.map(m => m.part.id),
+      ...newPartIds
+    ];
+    this.app.saveProducts(affectedIds);
     this.app.sound.playSaleChime();
     this.app.showToast(`Successfully synced ${matched.length} parts and added ${unmatched.length} parts with automotive AI recognition!`, "success");
 
@@ -958,8 +970,20 @@ export class PriceRevisionManager {
       return;
     }
 
-    this.app.products = snap.previousProductsBackup;
-    this.app.saveProducts();
+    // Revert prices only for parts whose prices differed, preserving newer stock values!
+    const changedIds = [];
+    const backupMap = new Map(snap.previousProductsBackup.map(p => [p.id, p]));
+    this.app.products.forEach(p => {
+      const oldPart = backupMap.get(p.id);
+      if (oldPart && (oldPart.sellingPrice !== p.sellingPrice || oldPart.costPrice !== p.costPrice)) {
+        p.sellingPrice = oldPart.sellingPrice;
+        p.costPrice = oldPart.costPrice;
+        p.lastPriceUpdated = new Date().toISOString();
+        changedIds.push(p.id);
+      }
+    });
+
+    this.app.saveProducts(changedIds.length > 0 ? changedIds : null);
     this.app.sound.playTransferChime();
 
     this.app.showToast(`Prices rolled back successfully! Restored ${this.app.products.length} parts.`, "success");

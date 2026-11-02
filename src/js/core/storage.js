@@ -4,8 +4,9 @@
 import { INITIAL_PARTS_DATA, SAMPLE_DEMO_PARTS, DEFAULT_VEHICLE_BRANDS, DEFAULT_CATEGORIES } from '../config/data.js';
 
 export const SUPABASE_CONFIG = {
-  url: "https://gateyugosmgzvavrpoxl.supabase.co",
-  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdhdGV5dWdvc21nenZhdnJwb3hsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4OTg2MjYsImV4cCI6MjEwMjQ3NDYyNn0.vwNlhxAA4XY5DYLmsq3CNXS1g4T59ImkirvWxT8357w"
+  projectRef: "nvtekxnitwrakunfjayi",
+  url: "https://nvtekxnitwrakunfjayi.supabase.co",
+  anonKey: "sb_publishable_S7emYPQL5knfxMG-j-hm4Q_W1Aq-CqQ"
 };
 
 export const STORAGE_KEYS = {
@@ -17,7 +18,10 @@ export const STORAGE_KEYS = {
   DEFECTIVE_RETURNS: 'autoparts_defective_v1',
   PRICE_HISTORY: 'autoparts_price_history_v1',
   VEHICLE_ALIASES: 'autoparts_vehicle_aliases_v1',
-  PRICE_CATALOG: 'autoparts_price_catalog_v1'
+  PRICE_CATALOG: 'autoparts_price_catalog_v1',
+  POS_CHECKOUTS_LOCAL: 'autoparts_pos_checkouts_local_v1',
+  PENDING_CHECKOUT: 'autoparts_active_checkout_v1',
+  LAST_RECEIPT: 'autoparts_last_completed_receipt_v1'
 };
 
 export const DEFAULT_VEHICLE_ALIASES = {
@@ -122,22 +126,166 @@ export const isLocalEnvironment = () => {
   );
 };
 
-export const isCloudSyncEnabled = () => {
-  if (isLocalEnvironment()) {
-    // Isolated local testing: do not touch deployed production Supabase database
-    return localStorage.getItem('autoparts_force_cloud_sync') === 'true';
+// ============================================================================
+// SECURITY & ENVIRONMENT GUARDS
+// ============================================================================
+
+export const ALLOWED_TEST_PROJECT_REF = 'nvtekxnitwrakunfjayi';
+export const ALLOWED_DEMO_HOSTS = ['smuzammil2508.github.io', 'localhost', '127.0.0.1'];
+
+let isCircuitBroken = false;
+let isSessionLockedOffline = false;
+let currentSessionGeneration = 1;
+let supabaseClient = null;
+let cachedConfigUrl = null;
+let cachedConfigKey = null;
+let activeRealtimeChannel = null;
+
+function tripCircuitBreaker(reason) {
+  if (isCircuitBroken) {
+    return; // Already tripped: do not emit duplicate transitions or re-increment generation
   }
-  return true;
+  isCircuitBroken = true;
+  currentSessionGeneration++;
+
+  if (activeRealtimeChannel) {
+    try { activeRealtimeChannel.unsubscribe(); } catch (e) {}
+    activeRealtimeChannel = null;
+  }
+  if (supabaseClient && supabaseClient.realtime) {
+    try { supabaseClient.realtime.disconnect(); } catch (e) {}
+  }
+  supabaseClient = null;
+  cachedConfigUrl = null;
+  cachedConfigKey = null;
+
+  console.error("❌ [Supabase Security] " + reason + " Cloud sync permanently locked. Reload required.");
+}
+
+export const getActiveSupabaseConfig = () => {
+  if (typeof window === 'undefined') {
+    return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'no_window' };
+  }
+
+  if (isCircuitBroken) {
+    return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'circuit_broken' };
+  }
+
+  const currentHost = (window.location.hostname || '').toLowerCase();
+
+  // Hard guard: Only 'nvtekxnitwrakunfjayi' project ref is permitted in Supabase URLs
+  const checkUrlSafety = (urlStr) => {
+    if (!urlStr) return true;
+    try {
+      const parsed = new URL(urlStr);
+      const hostParts = parsed.hostname.toLowerCase().split('.');
+      const isSupabaseDomain = hostParts.length === 3 && hostParts[1] === 'supabase' && hostParts[2] === 'co';
+      const projectRef = isSupabaseDomain ? hostParts[0] : '';
+      if (projectRef !== ALLOWED_TEST_PROJECT_REF) {
+        tripCircuitBreaker("Blocked: Only test project 'nvtekxnitwrakunfjayi' is permitted.");
+        return false;
+      }
+    } catch {
+      return false;
+    }
+    return true;
+  };
+
+  if (!checkUrlSafety(SUPABASE_CONFIG.url)) {
+    return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'production_ref_blocked' };
+  }
+
+  if (isLocalEnvironment()) {
+    // If the session started offline with no credentials, it must stay offline for the entire session
+    if (isSessionLockedOffline) {
+      const hasOverrideNow = Boolean(localStorage.getItem('autoparts_test_supabase_url') || localStorage.getItem('autoparts_test_supabase_anon_key'));
+      if (hasOverrideNow) {
+        tripCircuitBreaker("Test credentials added to an offline session. Mid-session connection prohibited.");
+      }
+      return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'session_locked_offline' };
+    }
+
+    const rawUrl = localStorage.getItem('autoparts_test_supabase_url') || SUPABASE_CONFIG.url;
+    const rawKey = localStorage.getItem('autoparts_test_supabase_anon_key') || SUPABASE_CONFIG.anonKey;
+    const testUrl = (rawUrl || '').trim();
+    const testKey = (rawKey || '').trim();
+
+    const hasAnyOverride = Boolean(rawUrl || rawKey);
+
+    if (!hasAnyOverride || !testKey) {
+      return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'local_default_offline' };
+    }
+
+    if (!checkUrlSafety(testUrl)) {
+      return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'production_ref_blocked' };
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(testUrl);
+    } catch {
+      tripCircuitBreaker("Malformed test URL.");
+      return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'malformed_url' };
+    }
+
+    const hostParts = parsed.hostname.toLowerCase().split('.');
+    const isSupabaseDomain = hostParts.length === 3 && hostParts[1] === 'supabase' && hostParts[2] === 'co';
+    const projectRef = isSupabaseDomain ? hostParts[0] : '';
+    const hasValidPath = parsed.pathname === '/' || parsed.pathname === '';
+    const hasNoExtras = !parsed.port && !parsed.username && !parsed.password && !parsed.search && !parsed.hash;
+
+    if (parsed.protocol !== 'https:' || !isSupabaseDomain || !hasValidPath || !hasNoExtras || !/^[a-z0-9_-]+$/.test(projectRef)) {
+      tripCircuitBreaker("Invalid test URL structure.");
+      return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'invalid_url_structure' };
+    }
+
+    if (projectRef !== ALLOWED_TEST_PROJECT_REF) {
+      tripCircuitBreaker("Blocked: Unallowlisted test project ref ('" + projectRef + "'). Only 'nvtekxnitwrakunfjayi' allowed.");
+      return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'unallowlisted_ref_blocked' };
+    }
+
+    if (!testKey || testKey.length < 20 || /\s/.test(testKey)) {
+      tripCircuitBreaker("Invalid test anon key.");
+      return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'invalid_anon_key' };
+    }
+
+    return { url: 'https://' + parsed.hostname.toLowerCase(), anonKey: testKey, isTest: true, enabled: true, projectRef: projectRef, reason: 'test_override_active' };
+  }
+
+  // Deployed GitHub Pages / Demo Environment (smuzammil2508.github.io/Autoparts-Pro-Demo/)
+  if (!ALLOWED_DEMO_HOSTS.includes(currentHost)) {
+    console.error("❌ [Supabase Security] Hostname '" + currentHost + "' not in demo allowlist. Failing closed.");
+    return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: null, reason: 'unapproved_demo_host_blocked' };
+  }
+
+  const demoUrl = (SUPABASE_CONFIG.url || '').trim();
+  const demoKey = (SUPABASE_CONFIG.anonKey || '').trim();
+
+  if (!demoUrl || !demoKey || demoKey.length < 20) {
+    console.log("🧪 Demo running in Offline Test Mode: Test Supabase anon key pending.");
+    return { url: null, anonKey: null, isTest: true, enabled: false, projectRef: ALLOWED_TEST_PROJECT_REF, reason: 'missing_test_key' };
+  }
+
+  return { url: demoUrl, anonKey: demoKey, isTest: true, enabled: true, projectRef: ALLOWED_TEST_PROJECT_REF, reason: 'demo_test_active' };
 };
 
-// Initialize Supabase Client (Only enabled in production or if explicitly forced)
-let supabaseClient = null;
+export const isCloudSyncEnabled = () => {
+  if (isCircuitBroken || isSessionLockedOffline) return false;
+  return getActiveSupabaseConfig().enabled;
+};
+
 try {
-  if (isCloudSyncEnabled() && window.supabase && window.supabase.createClient) {
-    supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
-    console.log("⚡ Supabase PostgreSQL Client connected successfully to DecentMotors_Inventory!");
-  } else if (!isCloudSyncEnabled()) {
+  const activeConfig = getActiveSupabaseConfig();
+  if (isLocalEnvironment() && !activeConfig.enabled) {
+    isSessionLockedOffline = true;
     console.log("🧪 Running in Local Test Mode: Supabase Cloud Sync is disabled to protect deployed production data.");
+  } else if (activeConfig.enabled && window.supabase && window.supabase.createClient) {
+    supabaseClient = window.supabase.createClient(activeConfig.url, activeConfig.anonKey);
+    cachedConfigUrl = activeConfig.url;
+    cachedConfigKey = activeConfig.anonKey;
+    if (activeConfig.isTest) {
+      console.log("🧪 [Supabase Test Client] Connected to test project ref: " + activeConfig.projectRef);
+    }
   }
 } catch (err) {
   console.warn("Supabase client init warning:", err);
@@ -145,14 +293,80 @@ try {
 
 export class StorageManager {
   static getClient() {
-    if (!isCloudSyncEnabled()) {
+    if (isCircuitBroken) {
       return null;
     }
+    const activeConfig = getActiveSupabaseConfig();
+
+    // Detect configuration change or removal after client initialization
+    if (supabaseClient && (!activeConfig.enabled || cachedConfigUrl !== activeConfig.url || cachedConfigKey !== activeConfig.anonKey)) {
+      tripCircuitBreaker("Configuration change or removal detected after initialization.");
+      return null;
+    }
+
+    if (isSessionLockedOffline || !activeConfig.enabled) {
+      return null;
+    }
+
     if (!supabaseClient && window.supabase && window.supabase.createClient) {
-      supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+      supabaseClient = window.supabase.createClient(activeConfig.url, activeConfig.anonKey);
+      cachedConfigUrl = activeConfig.url;
+      cachedConfigKey = activeConfig.anonKey;
     }
     return supabaseClient;
   }
+
+  static isCloudSyncEnabled() {
+    return isCloudSyncEnabled();
+  }
+
+  // --- CASHIER AUTHENTICATION (Phase 5 Supabase Auth) ---
+  static async signIn(email, password) {
+    const client = this.getClient();
+    if (!client) {
+      return {
+        data: { user: null, session: null },
+        error: new Error("Supabase client is not connected (Offline / Local Test Mode).")
+      };
+    }
+    return await client.auth.signInWithPassword({ email, password });
+  }
+
+  static async signOut() {
+    const client = this.getClient();
+    if (!client) {
+      return { error: null };
+    }
+    return await client.auth.signOut();
+  }
+
+  static async getSession() {
+    const client = this.getClient();
+    if (!client) {
+      return { data: { session: null }, error: null };
+    }
+    return await client.auth.getSession();
+  }
+
+  static onAuthStateChange(callback) {
+    const client = this.getClient();
+    if (!client) {
+      return {
+        data: {
+          subscription: {
+            unsubscribe: () => {}
+          }
+        }
+      };
+    }
+    return client.auth.onAuthStateChange(callback);
+  }
+
+  // Aliases for explicit semantic clarity
+  static async signInCashier(email, password) { return this.signIn(email, password); }
+  static async signOutCashier() { return this.signOut(); }
+  static async getCashierSession() { return this.getSession(); }
+  static onCashierAuthStateChange(callback) { return this.onAuthStateChange(callback); }
 
   // --- PRODUCTS ---
   static getProducts() {
@@ -202,6 +416,7 @@ export class StorageManager {
 
     // Auto re-sync when tab becomes visible or internet reconnects
     window.addEventListener('online', () => {
+      if (isCircuitBroken || !isCloudSyncEnabled()) return;
       console.log("🌐 Internet reconnected — syncing with Supabase cloud...");
       this.syncProductsFromCloud();
       this.syncOutflowsFromCloud();
@@ -209,6 +424,7 @@ export class StorageManager {
     });
 
     window.addEventListener('visibilitychange', () => {
+      if (isCircuitBroken || !isCloudSyncEnabled()) return;
       if (document.visibilityState === 'visible') {
         this.syncProductsFromCloud();
         this.syncPriceCatalogFromCloud();
@@ -225,35 +441,36 @@ export class StorageManager {
     if (!isCloudSyncEnabled()) {
       badge.classList.remove('hidden');
       badge.classList.add('flex');
-      if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-400 shrink-0";
+      if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0";
       if (label) {
-        label.textContent = "🧪 Local Test Mode";
-        label.className = "inline text-xs font-bold text-amber-300";
+        label.textContent = "Local Test Mode";
+        label.className = "hidden";
       }
-      badge.className = "btn-touch flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-extrabold bg-amber-950/70 border border-amber-500/50 text-amber-300 shadow-sm cursor-default";
-      badge.title = "Running in Local Test Mode: changes are saved only in your local browser and will NOT affect the deployed production store.";
+      badge.className = "btn-touch flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-400 shadow-sm transition-all shrink-0 cursor-default";
+      badge.title = "Running in Local Test Mode (Offline Sandbox): changes will not affect remote store.";
       return;
     }
 
     if (isLive) {
       badge.classList.remove('hidden');
       badge.classList.add('flex');
-      if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0";
+      if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0";
       if (label) {
-        label.textContent = labelText;
-        label.className = "hidden 2xl:inline";
+        label.textContent = "Live Cloud Synced";
+        label.className = "hidden";
       }
-      badge.className = "btn-touch flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 shadow-sm";
-      badge.title = "Connected to Supabase PostgreSQL Database. Changes sync live across all devices in real-time.";
+      badge.className = "btn-touch flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 shadow-sm transition-all shrink-0 cursor-default";
+      badge.title = "Cloud Synced: Connected to Supabase PostgreSQL Database. Live updates active.";
     } else {
       badge.classList.remove('hidden');
       badge.classList.add('flex');
-      if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-400 shrink-0";
+      if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-rose-400 shrink-0";
       if (label) {
         label.textContent = labelText || "Offline Cache";
-        label.className = "hidden 2xl:inline";
+        label.className = "hidden";
       }
-      badge.className = "btn-touch flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-extrabold bg-amber-950/70 border border-amber-500/50 text-amber-300 shadow-sm";
+      badge.className = "btn-touch flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-400 shadow-sm transition-all shrink-0 cursor-default";
+      badge.title = "Offline Cache: Cloud database is disconnected.";
     }
   }
 
@@ -262,21 +479,25 @@ export class StorageManager {
     if (!client) return;
 
     try {
-      client
-        .channel('public:db_sync')
+      activeRealtimeChannel = client.channel('public:db_sync');
+      activeRealtimeChannel
         .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+          if (isCircuitBroken || !isCloudSyncEnabled()) return;
           console.log("⚡ [Realtime] Cloud product change detected:", payload);
           this.syncProductsFromCloud();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'outflow_logs' }, (payload) => {
+          if (isCircuitBroken || !isCloudSyncEnabled()) return;
           console.log("⚡ [Realtime] Cloud sales outflow detected:", payload);
           this.syncOutflowsFromCloud();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'defective_returns' }, (payload) => {
+          if (isCircuitBroken || !isCloudSyncEnabled()) return;
           console.log("⚡ [Realtime] Cloud claim update detected:", payload);
           this.syncDefectiveReturnsFromCloud();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'price_catalog' }, (payload) => {
+          if (isCircuitBroken || !isCloudSyncEnabled()) return;
           console.log("⚡ [Realtime] Cloud price catalog change detected:", payload);
           this.syncPriceCatalogFromCloud();
         })
@@ -292,7 +513,7 @@ export class StorageManager {
   }
 
   static async syncProductsFromCloud() {
-    if (!isCloudSyncEnabled()) {
+    if (isCircuitBroken || !isCloudSyncEnabled()) {
       this.updateSyncBadge(false);
       return;
     }
@@ -302,9 +523,12 @@ export class StorageManager {
       return;
     }
 
+    const requestGen = currentSessionGeneration;
+
     try {
       this.updateSyncBadge(true, "Syncing...");
       const { data, error } = await client.from('products').select('*');
+      if (isCircuitBroken || requestGen !== currentSessionGeneration || !isCloudSyncEnabled()) return;
       if (!error && data) {
         if (data.length > 0) {
           // Map DB snake_case columns back to JS camelCase
@@ -334,9 +558,11 @@ export class StorageManager {
           localStorage.setItem('autoparts_is_production_clean', 'true');
           
           if (window.app && window.app.products) {
-            window.app.products = mapped;
-            window.app.renderProducts();
-            window.app.updateHeaderStats();
+            if (!(window.location && window.location.search && window.location.search.includes('test_stock_cases=1'))) {
+              window.app.products = mapped;
+              window.app.renderProducts();
+              window.app.updateHeaderStats();
+            }
           }
           this.updateSyncBadge(true, "Live Cloud Synced");
         } else {
@@ -344,9 +570,11 @@ export class StorageManager {
           localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify([]));
           localStorage.setItem('autoparts_is_production_clean', 'true');
           if (window.app && window.app.products) {
-            window.app.products = [];
-            window.app.renderProducts();
-            window.app.updateHeaderStats();
+            if (!(window.location && window.location.search && window.location.search.includes('test_stock_cases=1'))) {
+              window.app.products = [];
+              window.app.renderProducts();
+              window.app.updateHeaderStats();
+            }
           }
           this.updateSyncBadge(true, "Live Cloud Synced");
         }
@@ -390,7 +618,7 @@ export class StorageManager {
     }
   }
 
-  static saveProducts(products) {
+  static saveProducts(products, affectedIds = null) {
     // 1. Instant local persistence (0ms delay)
     try {
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
@@ -398,10 +626,17 @@ export class StorageManager {
       console.error("Local save failed", e);
     }
 
-    // 2. Cloud upsert in background
+    // 2. Cloud upsert in background: ONLY upsert affected product rows to avoid full-catalog overwrites
     const client = this.getClient();
-    if (client && navigator.onLine) {
-      const dbRows = products.map(p => ({
+    if (client && navigator.onLine && isCloudSyncEnabled()) {
+      let targetProducts = products;
+      if (affectedIds) {
+        const idSet = new Set(Array.isArray(affectedIds) ? affectedIds : [affectedIds]);
+        targetProducts = products.filter(p => idSet.has(p.id));
+      }
+      if (targetProducts.length === 0) return;
+
+      const dbRows = targetProducts.map(p => ({
         id: p.id,
         name: p.name,
         part_number: p.partNumber,
@@ -426,6 +661,443 @@ export class StorageManager {
       client.from('products').upsert(dbRows).then(({ error }) => {
         if (error) console.warn("Supabase products upsert warning:", error);
       });
+    }
+  }
+
+  // --- LOCAL POS CHECKOUT IDEMPOTENCY REGISTRY ---
+  static computePayloadHash(payload) {
+    const normMethod = (payload.paymentMethod || '').trim().toUpperCase();
+    const sortedItems = [...(payload.items || [])].sort((a, b) => (String(a.partId || '')).localeCompare(String(b.partId || '')));
+    const canonical = {
+      paymentMethod: normMethod,
+      items: sortedItems.map(i => ({
+        partId: String(i.partId).trim(),
+        quantity: parseInt(i.quantity, 10),
+        sellingPrice: parseFloat(i.sellingPrice || 0).toFixed(2)
+      }))
+    };
+    return JSON.stringify(canonical);
+  }
+
+  static getLocalCheckouts() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.POS_CHECKOUTS_LOCAL);
+      return data ? JSON.parse(data) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static saveLocalCheckout(checkoutId, record) {
+    const map = this.getLocalCheckouts();
+    map[checkoutId] = record;
+    localStorage.setItem(STORAGE_KEYS.POS_CHECKOUTS_LOCAL, JSON.stringify(map));
+  }
+
+  static getLastCompletedReceipt() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.LAST_RECEIPT);
+      return data ? JSON.parse(data) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static saveLastCompletedReceipt(receipt) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LAST_RECEIPT, JSON.stringify(receipt));
+    } catch (e) {}
+  }
+
+  // --- AUTOPARTS ERROR EXTRACTION ---
+  static extractAutopartsError(error) {
+    if (!error) return null;
+    const msg = typeof error === 'string' ? error : (error.message || error.details || '');
+    const markerIndex = msg.indexOf('AUTOPARTS_ERROR:');
+    if (markerIndex === -1) return null;
+
+    const startIndex = msg.indexOf('{', markerIndex);
+    if (startIndex === -1) return null;
+
+    let depth = 0;
+    let endIndex = -1;
+    for (let i = startIndex; i < msg.length; i++) {
+      if (msg[i] === '{') depth++;
+      else if (msg[i] === '}') {
+        depth--;
+        if (depth === 0) {
+          endIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (endIndex !== -1) {
+      try {
+        const jsonStr = msg.substring(startIndex, endIndex + 1);
+        return JSON.parse(jsonStr);
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  // --- POS CART CHECKOUT ---
+  static async processCheckout(payload, appContext) {
+    const isCloud = this.isCloudSyncEnabled();
+    const client = this.getClient();
+
+    if (isCloud) {
+      if (!client) {
+        return {
+          success: false,
+          error: "Cloud sync is enabled but database client is unavailable.",
+          code: "CLIENT_UNAVAILABLE"
+        };
+      }
+
+      // Explicit authentication guard: Verify an active, valid authenticated cashier session exists
+      let session = null;
+      try {
+        const { data } = await client.auth.getSession();
+        session = data && data.session;
+      } catch (sessErr) {
+        console.warn("Failed to check auth session before checkout:", sessErr);
+      }
+
+      if (!session || !session.user) {
+        return {
+          success: false,
+          error: "Cashier authentication required to process sale in cloud mode. Please sign in.",
+          code: "UNAUTHORIZED"
+        };
+      }
+
+      try {
+        const { data, error } = await client.rpc('process_pos_checkout', {
+          p_checkout_payload: payload
+        });
+
+        if (error) {
+          console.error("Supabase RPC process_pos_checkout error:", error);
+          let errorDetail = error.message || 'Checkout failed on database server.';
+          const parsedErr = this.extractAutopartsError(error);
+          if (parsedErr && parsedErr.code) {
+            return {
+              success: false,
+              error: parsedErr.message || errorDetail,
+              code: parsedErr.code,
+              raw: error
+            };
+          }
+
+          const isPermissionDenied = error.code === '42501' ||
+            (error.message && /permission denied/i.test(error.message));
+          if (isPermissionDenied) {
+            return {
+              success: false,
+              error: "Database permission denied. Valid authenticated cashier session required.",
+              code: "42501",
+              raw: error
+            };
+          }
+
+          return { success: false, error: errorDetail, code: error.code || 'RPC_ERROR', raw: error };
+        }
+
+        // On verified success from PostgreSQL
+        if (data && appContext) {
+          if (appContext.products) {
+            payload.items.forEach(item => {
+              const part = appContext.products.find(p => p.id === item.partId);
+              if (part) {
+                let rem = parseInt(item.quantity, 10) || 0;
+                const gDeduct = Math.min(part.stockGroundFloor || 0, rem);
+                part.stockGroundFloor = (part.stockGroundFloor || 0) - gDeduct;
+                rem -= gDeduct;
+                const f1Deduct = Math.min(part.stockFloor1 || 0, rem);
+                part.stockFloor1 = (part.stockFloor1 || 0) - f1Deduct;
+                rem -= f1Deduct;
+                const f2Deduct = Math.min(part.stockFloor2 || 0, rem);
+                part.stockFloor2 = (part.stockFloor2 || 0) - f2Deduct;
+              }
+            });
+            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(appContext.products));
+          }
+
+          // Durably record outflow entries into local memory and localStorage for instant Daily Outflow ledger visibility
+          const now = new Date();
+          const dateStr = payload.dateStr || now.toLocaleDateString('en-IN');
+          const timeStr = payload.timeStr || now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+          const newOutflows = payload.items.map((item, idx) => {
+            const part = (appContext.products || []).find(p => p.id === item.partId);
+            const qty = parseInt(item.quantity, 10) || 1;
+            const unitPrice = parseFloat(item.sellingPrice) || (part ? part.sellingPrice : 0);
+            const lineTotal = Math.round(qty * unitPrice * 100) / 100;
+            return {
+              id: `${payload.checkoutId}:item:${idx + 1}`,
+              partId: item.partId,
+              partName: part ? part.name : (item.name || 'Auto Part'),
+              partNumber: part ? part.partNumber : (item.partNumber || ''),
+              brand: part ? part.brand : (item.brand || ''),
+              quantity: qty,
+              sellingPrice: unitPrice,
+              unitPrice: unitPrice,
+              totalAmount: lineTotal,
+              dateStr: dateStr,
+              timeStr: timeStr,
+              notes: `Sold via ${payload.paymentMethod || 'CASH'}`
+            };
+          });
+
+          if (!appContext.outflowLog) appContext.outflowLog = this.getOutflows();
+          const existingIds = new Set(appContext.outflowLog.map(o => o.id));
+          const fresh = newOutflows.filter(o => !existingIds.has(o.id));
+          if (fresh.length > 0) {
+            appContext.outflowLog.unshift(...fresh);
+            localStorage.setItem(STORAGE_KEYS.OUTFLOW_LOG, JSON.stringify(appContext.outflowLog));
+          }
+        }
+
+        return { success: true, receipt: data, isCloud: true };
+      } catch (networkErr) {
+        console.error("Network error during process_pos_checkout:", networkErr);
+        return {
+          success: false,
+          error: "Network timeout or connection error during checkout. Click 'Retry Sale' to retry with the same checkout ID without double-deduction.",
+          code: 'NETWORK_ERROR',
+          isNetwork: true
+        };
+      }
+    }
+
+    // Local Test Mode (Offline / Simulated Transactional Execution)
+    return this.executeLocalCheckout(payload, appContext);
+  }
+
+  static executeLocalCheckout(payload, appContext) {
+    // Note: Client-side simulated transaction and idempotency in JavaScript/localStorage.
+    // Not an ACID database transaction.
+    if (!appContext || !appContext.products) {
+      return { success: false, error: "App catalog context not available." };
+    }
+
+    const { checkoutId, paymentMethod, items } = payload;
+    if (!checkoutId || !/^[a-zA-Z0-9_\-]{8,64}$/.test(checkoutId)) {
+      return { success: false, error: "Invalid checkoutId format.", code: "INVALID_CHECKOUT_ID" };
+    }
+
+    const normPaymentMethod = (paymentMethod || '').trim().toUpperCase();
+    if (normPaymentMethod !== 'CASH' && normPaymentMethod !== 'UPI') {
+      return { success: false, error: "Payment method must be CASH or UPI.", code: "INVALID_PAYMENT_METHOD" };
+    }
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return { success: false, error: "Cart is empty.", code: "EMPTY_CART" };
+    }
+
+    // Check duplicate part IDs
+    const partIds = items.map(i => i.partId);
+    if (new Set(partIds).size !== partIds.length) {
+      return { success: false, error: "Duplicate product ID in cart payload.", code: "DUPLICATE_CART_ITEM" };
+    }
+
+    // --- LOCAL IDEMPOTENCY CHECK ---
+    const payloadHash = this.computePayloadHash(payload);
+    const localCheckouts = this.getLocalCheckouts();
+    const existing = localCheckouts[checkoutId];
+
+    if (existing) {
+      if (existing.payloadHash === payloadHash) {
+        // Idempotent retry: Return cached receipt without modifying stock or outflows
+        return {
+          success: true,
+          receipt: existing.receipt,
+          isCloud: false,
+          isCached: true
+        };
+      } else {
+        // Reusing same checkoutId with altered payload
+        return {
+          success: false,
+          error: "checkoutId was previously committed with a different cart.",
+          code: "IDEMPOTENCY_PAYLOAD_MISMATCH"
+        };
+      }
+    }
+
+    // Snapshot pre-transaction state for safe rollback if local persistence fails
+    const preTxProducts = JSON.stringify(appContext.products);
+    const preTxOutflows = JSON.stringify(appContext.outflowLog || []);
+    const preTxCheckouts = JSON.stringify(localCheckouts);
+
+    // Verify all parts exist, prices match, stock suffices
+    const affectedParts = [];
+    const deductionPlans = [];
+    let grandTotal = 0;
+    let totalUnits = 0;
+
+    for (const item of items) {
+      const part = appContext.products.find(p => p.id === item.partId);
+      if (!part) {
+        return { success: false, error: `Part with ID "${item.partId}" not found in catalog.`, code: "PART_NOT_FOUND" };
+      }
+
+      const dbPrice = parseFloat(part.sellingPrice) || 0;
+      if (dbPrice <= 0) {
+        return { success: false, error: `Part "${part.name}" has no valid selling price.`, code: "INVALID_SERVER_PRICE" };
+      }
+
+      const clientPrice = parseFloat(item.sellingPrice) || 0;
+      if (Math.abs(clientPrice - dbPrice) >= 0.01) {
+        return {
+          success: false,
+          error: `Price changed for "${part.name}" (Catalog: ₹ ${dbPrice.toFixed(2)}, Cart: ₹ ${clientPrice.toFixed(2)}). Please refresh cart.`,
+          code: "PRICE_DRIFT"
+        };
+      }
+
+      const reqQty = parseInt(item.quantity, 10);
+      if (!Number.isFinite(reqQty) || reqQty < 1 || reqQty > 10000) {
+        return { success: false, error: `Invalid quantity for "${part.name}".`, code: "INVALID_QUANTITY" };
+      }
+
+      const totalStock = (part.stockGroundFloor || 0) + (part.stockFloor1 || 0) + (part.stockFloor2 || 0);
+      if (totalStock < reqQty) {
+        return {
+          success: false,
+          error: `Insufficient stock for "${part.name}". Requested: ${reqQty}, Available: ${totalStock}.`,
+          code: "INSUFFICIENT_STOCK"
+        };
+      }
+
+      const lineTotal = Math.round(reqQty * dbPrice * 100) / 100;
+      grandTotal += lineTotal;
+      totalUnits += reqQty;
+
+      deductionPlans.push({
+        part,
+        reqQty,
+        dbPrice,
+        lineTotal
+      });
+      affectedParts.push(part.id);
+    }
+
+    grandTotal = Math.round(grandTotal * 100) / 100;
+
+    // Execute atomic deduction in memory
+    const newOutflows = [];
+    const now = new Date();
+    const dateStr = payload.dateStr || now.toLocaleDateString('en-IN');
+    const timeStr = payload.timeStr || now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+    deductionPlans.forEach((plan, idx) => {
+      const { part, reqQty, dbPrice, lineTotal } = plan;
+      let rem = reqQty;
+      const deductedFrom = [];
+
+      // Ground Floor
+      if ((part.stockGroundFloor || 0) > 0 && rem > 0) {
+        const d = Math.min(part.stockGroundFloor, rem);
+        part.stockGroundFloor -= d;
+        rem -= d;
+        deductedFrom.push(`${d} from Ground Floor Stash`);
+      }
+      // Floor 1
+      if ((part.stockFloor1 || 0) > 0 && rem > 0) {
+        const d = Math.min(part.stockFloor1, rem);
+        part.stockFloor1 -= d;
+        rem -= d;
+        deductedFrom.push(`${d} from ${part.rackLocation || 'Floor 1'}`);
+      }
+      // Floor 2
+      if ((part.stockFloor2 || 0) > 0 && rem > 0) {
+        const d = Math.min(part.stockFloor2, rem);
+        part.stockFloor2 -= d;
+        rem -= d;
+        deductedFrom.push(`${d} from 2nd Floor`);
+      }
+
+      const outflowId = `${checkoutId}:item:${idx + 1}`;
+      newOutflows.push({
+        id: outflowId,
+        partId: part.id,
+        partName: part.name,
+        partNumber: part.partNumber,
+        brand: part.brand,
+        quantity: reqQty,
+        sellingPrice: dbPrice,
+        totalAmount: lineTotal,
+        dateStr,
+        timeStr,
+        notes: `Sold via ${normPaymentMethod}: ${deductedFrom.join(', ')}`
+      });
+    });
+
+    const receipt = {
+      success: true,
+      checkoutId,
+      paymentMethod: normPaymentMethod,
+      totalAmount: grandTotal,
+      itemsCount: totalUnits,
+      timestamp: now.toISOString(),
+      dateStr,
+      timeStr,
+      items: deductionPlans.map(p => ({
+        partId: p.part.id,
+        name: p.part.name,
+        partNumber: p.part.partNumber,
+        quantity: p.reqQty,
+        unitPrice: p.dbPrice,
+        lineTotal: p.lineTotal
+      }))
+    };
+
+    // Durable persistence with automatic rollback if storage fails partway through
+    try {
+      // 1. Save only affected products
+      this.saveProducts(appContext.products, affectedParts);
+
+      // 2. Save outflows
+      if (!appContext.outflowLog) appContext.outflowLog = [];
+      appContext.outflowLog.unshift(...newOutflows);
+      this.saveOutflows(appContext.outflowLog);
+
+      // 3. Save local checkout record for durable duplicate protection
+      const checkoutRecord = {
+        id: checkoutId,
+        payloadHash,
+        paymentMethod: normPaymentMethod,
+        totalAmount: grandTotal,
+        itemsCount: totalUnits,
+        receipt,
+        timestamp: now.toISOString(),
+        status: 'completed'
+      };
+      this.saveLocalCheckout(checkoutId, checkoutRecord);
+
+      // 4. Cache last completed receipt for robust receipt recovery
+      try {
+        localStorage.setItem(STORAGE_KEYS.LAST_RECEIPT, JSON.stringify(receipt));
+      } catch (e) {}
+
+      return { success: true, receipt, isCloud: false };
+    } catch (persistErr) {
+      console.error("Local persistence error during checkout; rolling back in-memory state", persistErr);
+      try {
+        appContext.products = JSON.parse(preTxProducts);
+        appContext.outflowLog = JSON.parse(preTxOutflows);
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, preTxProducts);
+        localStorage.setItem(STORAGE_KEYS.OUTFLOW_LOG, preTxOutflows);
+        localStorage.setItem(STORAGE_KEYS.POS_CHECKOUTS_LOCAL, preTxCheckouts);
+      } catch (rbErr) {
+        console.error("Rollback error:", rbErr);
+      }
+      return {
+        success: false,
+        error: "Local storage persistence error. Transaction safely rolled back.",
+        code: "LOCAL_PERSISTENCE_ERROR"
+      };
     }
   }
 
@@ -504,11 +1176,15 @@ export class StorageManager {
   }
 
   static async syncOutflowsFromCloud() {
+    if (isCircuitBroken || !this.isCloudSyncEnabled()) return;
     const client = this.getClient();
-    if (!client || !navigator.onLine) return;
+    if (!client || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+
+    const requestGen = currentSessionGeneration;
 
     try {
       const { data, error } = await client.from('outflow_logs').select('*');
+      if (isCircuitBroken || requestGen !== currentSessionGeneration || !this.isCloudSyncEnabled()) return;
       if (!error && data && data.length > 0) {
         const mapped = data.map(s => ({
           id: s.id,
@@ -518,15 +1194,31 @@ export class StorageManager {
           brand: s.brand,
           quantity: s.quantity,
           sellingPrice: parseFloat(s.selling_price) || 0,
+          unitPrice: parseFloat(s.selling_price) || 0,
           totalAmount: parseFloat(s.total_amount) || 0,
-          dateStr: s.date_str,
-          timeStr: s.time_str,
+          dateStr: s.date_str || (s.created_at ? s.created_at.slice(0, 10) : ''),
+          timeStr: s.time_str || '',
           notes: s.notes || ''
         }));
-        localStorage.setItem(STORAGE_KEYS.OUTFLOW_LOG, JSON.stringify(mapped));
+
+        // Deduplicate and merge with local outflows so offline / local records are preserved
+        const localList = this.getOutflows();
+        const mergedMap = new Map();
+        localList.forEach(item => { if (item && item.id) mergedMap.set(item.id, item); });
+        mapped.forEach(item => {
+          if (item && item.id) {
+            const existing = mergedMap.get(item.id) || {};
+            mergedMap.set(item.id, { ...existing, ...item });
+          }
+        });
+        const finalLog = Array.from(mergedMap.values());
+        localStorage.setItem(STORAGE_KEYS.OUTFLOW_LOG, JSON.stringify(finalLog));
         if (window.app) {
-          window.app.outflowLog = mapped;
+          window.app.outflowLog = finalLog;
           window.app.updateHeaderStats();
+          if (window.app.workspace === 'outflow' || (document.getElementById('daily-outflow-modal') && !document.getElementById('daily-outflow-modal').classList.contains('hidden'))) {
+            window.app.renderOutflowTableWithFilter(window.app.currentOutflowFilter || 'today');
+          }
         }
       }
     } catch (e) {
@@ -537,7 +1229,7 @@ export class StorageManager {
   static saveOutflows(log) {
     localStorage.setItem(STORAGE_KEYS.OUTFLOW_LOG, JSON.stringify(log));
     const client = this.getClient();
-    if (client && navigator.onLine) {
+    if (client && typeof client.from === 'function' && navigator.onLine) {
       const dbRows = log.map(s => ({
         id: s.id,
         part_id: s.partId,
@@ -570,11 +1262,15 @@ export class StorageManager {
   }
 
   static async syncDefectiveReturnsFromCloud() {
+    if (isCircuitBroken || !isCloudSyncEnabled()) return;
     const client = this.getClient();
     if (!client || !navigator.onLine) return;
 
+    const requestGen = currentSessionGeneration;
+
     try {
       const { data, error } = await client.from('defective_returns').select('*');
+      if (isCircuitBroken || requestGen !== currentSessionGeneration || !isCloudSyncEnabled()) return;
       if (!error && data && data.length > 0) {
         const mapped = data.map(r => ({
           id: r.id,
@@ -681,14 +1377,19 @@ export class StorageManager {
   }
 
   static async syncPriceCatalogFromCloud() {
+    if (isCircuitBroken || !isCloudSyncEnabled()) return;
     const client = this.getClient();
     if (!client || !navigator.onLine) return;
+
+    const requestGen = currentSessionGeneration;
 
     try {
       const { data, error } = await client
         .from('price_catalog')
         .select('*')
         .order('name');
+
+      if (isCircuitBroken || requestGen !== currentSessionGeneration || !isCloudSyncEnabled()) return;
 
       if (!error && data) {
         const mapped = data.map(item => ({
@@ -821,7 +1522,7 @@ export class StorageManager {
   static getSettings() {
     const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (!data) {
-      this.saveSettings(DEFAULT_SETTINGS);
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
       return DEFAULT_SETTINGS;
     }
     return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
@@ -1000,4 +1701,22 @@ export class StorageManager {
       }
     ];
   }
+
+  static getActiveProjectInfo() {
+    const config = getActiveSupabaseConfig();
+    return {
+      environment: isLocalEnvironment() ? 'local' : 'production',
+      cloudSyncEnabled: config.enabled && !isCircuitBroken && !isSessionLockedOffline,
+      isCircuitBroken: isCircuitBroken,
+      isSessionLockedOffline: isSessionLockedOffline,
+      sessionGeneration: currentSessionGeneration,
+      isTestOverride: config.isTest,
+      projectRef: config.projectRef || null,
+      projectUrl: config.url || null
+    };
+  }
+}
+
+if (typeof window !== 'undefined' && isLocalEnvironment()) {
+  window.StorageManager = StorageManager;
 }

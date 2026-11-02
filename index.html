@@ -43,61 +43,52 @@
 
   <!-- TOP HEADER -->
   <header class="glass-panel sticky top-0 z-40 border-b border-slate-800/80 px-2 sm:px-4 md:px-6 py-2 transition-colors">
-    <div class="max-w-[1720px] mx-auto flex items-center justify-between gap-2 md:gap-4">
+    <div class="max-w-[1720px] mx-auto flex flex-wrap xl:flex-nowrap items-center justify-between gap-2 md:gap-4">
       
-      <!-- Store Brand & Logo -->
-      <div class="flex items-center gap-2 md:gap-3 cursor-pointer shrink-0" onclick="window.app && window.app.switchWorkspace('counter')">
+      <!-- Store Brand & Logo (Logo Only) -->
+      <div class="flex items-center cursor-pointer shrink-0" onclick="window.app && window.app.switchWorkspace('counter')" title="AutoParts Pro - Counter POS">
         <div class="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-amber-500/20 shrink-0">
           <i data-lucide="gauge" class="w-4 h-4 sm:w-5 sm:h-5 text-slate-950"></i>
         </div>
-        <div class="min-w-0">
-          <h1 id="store-brand-title" class="text-xs sm:text-sm md:text-base font-black tracking-tight text-slate-100 flex items-center gap-1.5 truncate">
-            City Auto Parts & Spares
-          </h1>
-          <div class="text-[10px] sm:text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-            <span class="hidden sm:inline">Multi-Floor Counter & Inventory</span>
-            <span class="sm:hidden">Live System</span>
-          </div>
-        </div>
+        <h1 id="store-brand-title" class="hidden" aria-hidden="true">City Auto Parts & Spares</h1>
       </div>
 
-      <!-- CENTER: 4-WORKSPACE NAVIGATION TABS -->
-      <nav id="workspace-nav" class="flex items-center bg-slate-950/80 p-1 rounded-2xl border border-slate-800/90 shadow-inner overflow-x-auto no-scrollbar gap-1 shrink-0">
+      <!-- CENTER: 5-WORKSPACE NAVIGATION TABS -->
+      <nav id="workspace-nav" class="flex items-center bg-slate-950/80 p-1 rounded-2xl border border-slate-800/90 shadow-inner overflow-x-auto no-scrollbar gap-1 max-w-full order-3 xl:order-2">
         <button 
           id="nav-tab-counter" 
           data-workspace="counter"
-          class="workspace-nav-tab active flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 cursor-pointer"
+          class="workspace-nav-tab active flex items-center gap-1.5 px-2 sm:px-3 lg:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs md:text-sm font-bold transition-all shrink-0 cursor-pointer whitespace-nowrap"
         >
-          <i data-lucide="package" class="w-4 h-4 text-amber-400"></i>
+          <i data-lucide="package" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 shrink-0"></i>
           <span>Counter POS</span>
         </button>
 
         <button 
           id="nav-tab-outflow" 
           data-workspace="outflow"
-          class="workspace-nav-tab flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 shrink-0 cursor-pointer"
+          class="workspace-nav-tab flex items-center gap-1.5 px-2 sm:px-3 lg:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs md:text-sm font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 shrink-0 cursor-pointer whitespace-nowrap"
         >
-          <i data-lucide="book-open" class="w-4 h-4 text-blue-400"></i>
+          <i data-lucide="book-open" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400 shrink-0"></i>
           <span>Daily Outflow Book</span>
-          <span id="nav-today-revenue" class="text-emerald-400 font-mono text-[11px] hidden lg:inline">₹ 0</span>
+          <span id="nav-today-revenue" class="text-emerald-400 font-mono text-[10px] sm:text-[11px] hidden 2xl:inline">₹ 0</span>
         </button>
 
         <button 
           id="nav-tab-pricing" 
           data-workspace="pricing"
-          class="workspace-nav-tab flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 shrink-0 cursor-pointer"
+          class="workspace-nav-tab flex items-center gap-1.5 px-2 sm:px-3 lg:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs md:text-sm font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 shrink-0 cursor-pointer whitespace-nowrap"
         >
-          <i data-lucide="trending-up" class="w-4 h-4 text-purple-400"></i>
+          <i data-lucide="trending-up" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400 shrink-0"></i>
           <span>Price Revision</span>
         </button>
 
         <button 
           id="nav-tab-claims" 
           data-workspace="claims"
-          class="workspace-nav-tab flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 shrink-0 cursor-pointer"
+          class="workspace-nav-tab flex items-center gap-1.5 px-2 sm:px-3 lg:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs md:text-sm font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 shrink-0 cursor-pointer whitespace-nowrap"
         >
-          <i data-lucide="shield-alert" class="w-4 h-4 text-rose-400"></i>
+          <i data-lucide="shield-alert" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400 shrink-0"></i>
           <span>Wholesaler Claims</span>
           <span id="nav-defective-pending-count" class="hidden bg-rose-600 text-white px-1.5 py-0.2 rounded-full text-[10px] font-black">0</span>
         </button>
@@ -105,17 +96,17 @@
         <button 
           id="nav-tab-on-order" 
           data-workspace="on-order"
-          class="workspace-nav-tab flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 shrink-0 cursor-pointer"
+          class="workspace-nav-tab flex items-center gap-1.5 px-2 sm:px-3 lg:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs md:text-sm font-bold transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 shrink-0 cursor-pointer whitespace-nowrap"
           title="Master Price Book for on-order / procure-on-demand parts"
         >
-          <i data-lucide="book-marked" class="w-4 h-4 text-purple-400"></i>
+          <i data-lucide="book-marked" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400 shrink-0"></i>
           <span>Price Book (On-Order)</span>
           <span id="nav-on-order-count" class="hidden bg-purple-600 text-white px-1.5 py-0.2 rounded-full text-[10px] font-black">0</span>
         </button>
       </nav>
 
-      <!-- RIGHT SIDE: CONTEXTUAL ACTIONS + ALERTS + CLOUD SYNC + THEME & SETTINGS -->
-      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0 justify-end">
+      <!-- RIGHT SIDE: CONTEXTUAL ACTIONS + ALERTS + CLOUD SYNC + SETTINGS -->
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0 justify-end order-2 xl:order-3 min-w-0">
         
         <!-- RETURNED ON COUNTER (UNUSED) ALERT BUTTON -->
         <button 
@@ -124,8 +115,19 @@
           title="Click to view unused returned items sitting on the ground floor counter"
         >
           <i data-lucide="corner-up-left" class="w-3.5 h-3.5 text-amber-400"></i>
-          <span class="hidden xl:inline">On Counter:</span>
+          <span class="hidden 2xl:inline">On Counter:</span>
           <span id="ground-stash-count-num" class="bg-amber-500 text-slate-950 px-1.5 py-0.2 rounded-full text-[10px] font-black">0</span>
+        </button>
+
+        <!-- POS CART DRAWER TRIGGER BUTTON (COMPACT ICON + COUNT BADGE) -->
+        <button 
+          id="open-cart-drawer-btn" 
+          class="btn-touch flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-amber-400 hover:text-amber-300 border border-amber-500/40 shadow-sm transition-all cursor-pointer shrink-0"
+          title="Open POS Cart Drawer"
+          aria-label="Open POS Sales Cart Drawer"
+        >
+          <i data-lucide="shopping-cart" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400"></i>
+          <span id="header-cart-count" class="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black">0</span>
         </button>
 
         <!-- DYNAMIC CONTEXTUAL PRIMARY ACTION BUTTON -->
@@ -141,23 +143,31 @@
           </button>
         </div>
 
-        <!-- CLOUD SYNC LIVE BADGE -->
+        <!-- CLOUD CONNECTION STATUS (SMALL GREEN INDICATOR) -->
         <div 
           id="cloud-sync-status-badge" 
-          class="btn-touch hidden items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 font-bold text-xs shadow-sm transition-all shrink-0"
-          title="Connected to Supabase PostgreSQL Database. Changes sync live across all devices in real-time."
+          class="btn-touch flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 shadow-sm transition-all shrink-0 cursor-default"
+          title="Cloud Synced: Connected to Supabase PostgreSQL Database. Live updates active."
         >
-          <span id="cloud-sync-status-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-          <span id="cloud-sync-status-text" class="hidden 2xl:inline">Live Cloud Synced</span>
+          <span id="cloud-sync-status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+          <span id="cloud-sync-status-text" class="hidden" aria-hidden="true"></span>
         </div>
 
-        <!-- THEME & SETTINGS -->
-        <div class="flex items-center gap-1 shrink-0">
-          <button 
-            id="theme-toggle-btn" 
-            class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 flex items-center justify-center transition-all cursor-pointer"
-            title="Toggle Dark/Light Mode"
-          >
+        <!-- CASHIER AUTH HIDDEN ANCHOR (Controls moved into Settings > Cashier Account) -->
+        <button 
+          id="cashier-auth-badge" 
+          type="button"
+          class="hidden"
+          aria-hidden="true"
+          tabindex="-1"
+        >
+          <span id="cashier-status-dot" class="hidden"></span>
+          <span id="cashier-status-text" class="hidden"></span>
+        </button>
+
+        <!-- SETTINGS (GEAR ICON AT FAR RIGHT) -->
+        <div class="flex items-center shrink-0">
+          <button id="theme-toggle-btn" class="hidden" aria-hidden="true" tabindex="-1">
             <i id="theme-toggle-icon" data-lucide="sun" class="w-4 h-4"></i>
           </button>
 
@@ -182,10 +192,10 @@
     <div id="workspace-view-counter" class="workspace-view active flex flex-col gap-2.5 sm:gap-3">
       
       <!-- SEARCH BAR + QUICK SHORTCUTS HERO -->
-      <section class="flex flex-col gap-2">
+      <section class="flex flex-col gap-1.5">
         
         <!-- SEARCH BAR -->
-        <div class="relative flex items-center">
+        <div class="relative flex items-center w-full">
           <!-- Search Icon -->
           <div class="absolute left-3.5 sm:left-4 pointer-events-none text-slate-400">
             <i data-lucide="search" class="w-4 h-4 sm:w-5 sm:h-5"></i>
@@ -196,14 +206,14 @@
             type="text" 
             id="search-input" 
             placeholder="Search by Part Name, Part # (SKU), or Car Model... (Press / or Ctrl+K)"
-            class="w-full pl-10 sm:pl-11 pr-[140px] sm:pr-[280px] md:pr-[400px] lg:pr-[440px] py-2.5 sm:py-3 md:py-3.5 rounded-2xl bg-slate-900/95 border-2 border-slate-700/80 focus:border-amber-500 focus:outline-none text-slate-100 placeholder-slate-500 text-xs sm:text-sm font-semibold shadow-xl transition-all"
+            class="w-full pl-10 sm:pl-11 pr-28 sm:pr-48 md:pr-72 lg:pr-80 py-2.5 sm:py-3 md:py-3.5 rounded-2xl bg-slate-900/95 border-2 border-slate-700/80 focus:border-amber-500 focus:outline-none text-slate-100 placeholder-slate-500 text-xs sm:text-sm font-semibold shadow-xl transition-all"
             autocomplete="off"
           />
 
           <!-- Right Side Controls -->
           <div class="absolute right-2 flex items-center gap-1 sm:gap-1.5">
             <!-- Keyboard Shortcut Badge -->
-            <kbd class="kbd-badge hidden lg:inline-flex" title="Press Ctrl+K or / anywhere to focus search">Ctrl K</kbd>
+            <kbd class="kbd-badge hidden 2xl:inline-flex" title="Press Ctrl+K or / anywhere to focus search">Ctrl K</kbd>
 
             <!-- Clear Search Text Button -->
             <button 
@@ -221,7 +231,7 @@
               title="Clear all active filters"
             >
               <i data-lucide="rotate-ccw" class="w-3 h-3 text-rose-400"></i>
-              <span class="hidden sm:inline">Clear All</span>
+              <span class="hidden md:inline">Clear All</span>
             </button>
 
             <!-- Select All Visible / Filtered Parts for Batch Printing Button -->
@@ -231,8 +241,8 @@
               title="Select all currently visible/filtered parts for Batch Printing"
             >
               <i data-lucide="check-square" class="w-3 h-3 text-blue-400"></i>
-              <span class="hidden md:inline">Select Visible</span>
-              <span class="hidden sm:inline md:hidden">Select</span>
+              <span class="hidden lg:inline">Select Visible</span>
+              <span class="hidden sm:inline lg:hidden">Select</span>
             </button>
 
             <!-- Voice Search Button -->
@@ -242,7 +252,7 @@
               title="Tap to speak car model or part name"
             >
               <i data-lucide="mic" class="w-3.5 h-3.5 text-amber-400"></i>
-              <span class="hidden sm:inline">Voice</span>
+              <span class="hidden md:inline">Voice</span>
             </button>
 
             <!-- LIVE BARCODE SCANNER BUTTON -->
@@ -252,21 +262,22 @@
               title="Open camera barcode scanner or connect hardware laser scanner gun to auto-sell parts"
             >
               <i data-lucide="scan-barcode" class="w-3.5 h-3.5"></i>
-              <span>Scan & Sell</span>
+              <span class="hidden sm:inline">Scan & Sell</span>
+              <span class="sm:hidden">Scan</span>
             </button>
           </div>
         </div>
 
-        <!-- COMPACT HORIZONTAL BRAND CHIPS (SINGLE ROW SCROLL) -->
-        <div class="relative flex items-center">
-          <div class="horizontal-ribbon flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth w-full" id="brand-chips-container">
+        <!-- CAR BRAND CHIPS (SINGLE HORIZONTALLY SCROLLABLE ROW) -->
+        <div class="relative w-full">
+          <div class="horizontal-ribbon flex items-center gap-1.5 flex-nowrap overflow-x-auto no-scrollbar py-0.5 w-full" id="brand-chips-container">
             <!-- Injected via JavaScript -->
           </div>
         </div>
 
-        <!-- COMPACT HORIZONTAL PART CATEGORY CHIPS (SINGLE ROW SCROLL) -->
-        <div class="relative flex items-center">
-          <div class="horizontal-ribbon flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth w-full" id="category-chips-container">
+        <!-- PART CATEGORY CHIPS (SINGLE HORIZONTALLY SCROLLABLE ROW) -->
+        <div class="relative w-full">
+          <div class="horizontal-ribbon flex items-center gap-1.5 flex-nowrap overflow-x-auto no-scrollbar py-0.5 w-full" id="category-chips-container">
             <!-- Injected via JavaScript -->
           </div>
         </div>
@@ -1060,6 +1071,147 @@
 
   <!-- ================= MODALS & DRAWERS ================= -->
 
+  <!-- POS CART DRAWER BACKDROP (DIMMED OVERLAY) -->
+  <div 
+    id="cart-drawer-backdrop" 
+    class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm opacity-0 pointer-events-none invisible transition-all duration-300"
+    aria-hidden="true"
+  ></div>
+
+  <!-- POS CART RIGHT-SIDE SLIDE-IN DRAWER (PHASE 2 VISUAL PROTOTYPE SHELL) -->
+  <aside 
+    id="cart-drawer" 
+    class="fixed top-0 right-0 z-50 h-full w-full sm:w-[480px] md:w-[520px] bg-slate-950 border-l border-slate-800 shadow-2xl flex flex-col translate-x-full"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="cart-drawer-title"
+  >
+    <!-- Drawer Header -->
+    <div class="px-4 sm:px-5 py-3.5 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0">
+          <i data-lucide="shopping-cart" class="w-4 h-4 sm:w-5 sm:h-5"></i>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <h2 id="cart-drawer-title" class="text-sm sm:text-base font-black text-slate-100 tracking-tight truncate">
+              POS Sales Cart
+            </h2>
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 shrink-0">
+              In-Memory Cart
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400 truncate">
+            Review pending scanned parts before checkout
+          </p>
+        </div>
+      </div>
+
+      <!-- Header Action Controls -->
+      <div class="flex items-center gap-1.5 shrink-0">
+        <!-- Close Drawer Button -->
+        <button 
+          type="button" 
+          id="close-cart-drawer-btn" 
+          class="w-8 h-8 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-100 flex items-center justify-center transition-all cursor-pointer"
+          title="Close Cart Drawer (Escape)"
+          aria-label="Close Cart Drawer"
+        >
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Phase 4 Notice Banner -->
+    <div class="px-4 py-2 bg-emerald-950/40 border-b border-emerald-800/40 text-[11px] text-emerald-200 flex items-center gap-2 shrink-0">
+      <i data-lucide="info" class="w-3.5 h-3.5 text-emerald-400 shrink-0"></i>
+      <span>Phase 4 In-Memory Cart: Quantity bounds & selling-price integrity verified. Zero stock or database changes occur until Phase 5 checkout.</span>
+    </div>
+
+    <!-- Drawer Body: Scrollable Cart Items Container -->
+    <div id="cart-items-container" class="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-4 space-y-3">
+
+      <!-- DYNAMIC CART ITEMS LIST (POPULATED BY renderCartDrawer()) -->
+      <div id="cart-items-list" class="space-y-3">
+        <!-- Populated dynamically via JavaScript -->
+      </div>
+
+      <!-- EMPTY CART STATE (VISIBLE WHEN CART HAS 0 ITEMS) -->
+      <div id="cart-empty-state" class="py-14 px-6 text-center rounded-2xl bg-slate-900/40 border-2 border-dashed border-slate-800 space-y-3">
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-slate-400">
+          <i data-lucide="shopping-cart" class="w-8 h-8 text-slate-400"></i>
+        </div>
+        <h3 class="text-base font-extrabold text-slate-200">Your Sales Cart is Empty</h3>
+        <p class="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+          Scan any auto part barcode with your laser scanner gun or use the quick barcode simulator to add items to the cart.
+        </p>
+      </div>
+
+    </div>
+
+    <!-- Drawer Footer: Subtotal & Checkout Action Area -->
+    <div class="p-4 bg-slate-900/95 border-t border-slate-800 space-y-3 shrink-0 shadow-lg">
+      
+      <!-- Summary Totals Table -->
+      <div id="cart-footer-totals" class="space-y-1.5 text-xs hidden">
+        <div class="flex items-center justify-between text-slate-400">
+          <span>Staged Items (Units)</span>
+          <span id="cart-total-units-text" class="font-mono font-bold text-slate-200">0 parts (0 units)</span>
+        </div>
+        <div class="flex items-center justify-between text-slate-400">
+          <span>Counter Tax / GST</span>
+          <span id="cart-tax-text" class="font-mono text-slate-300">₹ 0.00 (Inclusive)</span>
+        </div>
+        <div class="flex items-center justify-between text-sm sm:text-base font-black text-slate-100 pt-1.5 border-t border-slate-800">
+          <span class="text-slate-200">Grand Total</span>
+          <span id="cart-grand-total-amount" class="font-mono text-emerald-400 font-extrabold">₹ 0.00</span>
+        </div>
+      </div>
+
+      <!-- Cart Action Buttons -->
+      <div class="flex items-center gap-2 pt-1">
+        <!-- View Last Receipt Button -->
+        <button 
+          type="button" 
+          id="btn-view-last-receipt" 
+          class="btn-touch py-2.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 text-xs font-bold transition-all border border-slate-700 cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+          title="View and reprint the last completed sales receipt"
+        >
+          <i data-lucide="receipt" class="w-3.5 h-3.5 text-blue-400"></i>
+          <span class="hidden sm:inline">Last Receipt</span>
+        </button>
+
+        <!-- Clear Cart Button (Secondary) -->
+        <button 
+          type="button" 
+          id="btn-clear-cart" 
+          class="btn-touch py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-bold transition-all border border-slate-700 cursor-pointer flex items-center justify-center gap-1.5"
+          title="Clear all staged items from in-memory cart"
+        >
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+          <span>Clear</span>
+        </button>
+
+        <!-- Complete Sale Button (Primary Checkout) -->
+        <button 
+          type="button" 
+          id="btn-complete-sale" 
+          disabled
+          class="btn-touch flex-1 py-3 px-4 rounded-xl bg-slate-800 text-slate-400 text-xs sm:text-sm font-black flex items-center justify-center gap-2 shadow-lg border border-slate-700 cursor-not-allowed opacity-60 transition-all"
+          title="Review cart and complete sale"
+        >
+          <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+          <span>Complete Sale / Sold</span>
+        </button>
+      </div>
+
+      <!-- Safety Disclaimer -->
+      <div class="text-[10px] text-center text-slate-400">
+        🔒 Phase 4 Safeguard: In-memory cart only. Stock & sales logs are completely untouched.
+      </div>
+    </div>
+  </aside>
+
   <!-- MODAL 1: GROUND FLOOR STASH / RETURN TRAY (SOLVES PROBLEM 2) -->
   <div id="ground-stash-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-3 md:p-6">
     <div class="modal-enter w-full max-w-2xl bg-slate-950 border-2 border-amber-500/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1500,6 +1652,57 @@
       </div>
 
       <form id="settings-form" class="p-5 space-y-4 text-xs md:text-sm overflow-y-auto flex-1">
+        <!-- CASHIER ACCOUNT SECTION -->
+        <div id="settings-cashier-section" class="p-4 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-3">
+          <div class="flex items-center justify-between pb-2.5 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                <i data-lucide="shield-check" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <h3 class="text-xs sm:text-sm font-bold text-slate-100">Cashier Account</h3>
+                <p class="text-[10px] text-slate-400">Authentication & POS Identity</p>
+              </div>
+            </div>
+            <div id="settings-cashier-status-badge" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 border border-slate-700 text-slate-400">
+              <span id="settings-cashier-dot" class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
+              <span id="settings-cashier-label">Signed Out</span>
+            </div>
+          </div>
+
+          <!-- Active Cashier Session Details (Visible when signed in) -->
+          <div id="settings-cashier-signed-in" class="space-y-3 hidden">
+            <div class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+              <div class="text-[11px] text-slate-400">Active Cashier:</div>
+              <div id="settings-cashier-email" class="font-mono text-emerald-300 font-bold text-xs truncate"></div>
+              <div class="text-[10px] text-slate-500">Session ID: <span id="settings-cashier-uid" class="font-mono text-slate-400"></span></div>
+            </div>
+            <button 
+              type="button" 
+              id="btn-settings-cashier-signout" 
+              class="w-full btn-touch py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            >
+              <i data-lucide="log-out" class="w-4 h-4"></i>
+              <span>Sign Out Cashier</span>
+            </button>
+          </div>
+
+          <!-- Signed Out View (Visible when signed out) -->
+          <div id="settings-cashier-signed-out" class="space-y-2.5">
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              No cashier is currently signed in. Sign in to record authenticated sales sessions.
+            </p>
+            <button 
+              type="button" 
+              id="btn-settings-cashier-login" 
+              class="w-full btn-touch py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-blue-600/20 cursor-pointer"
+            >
+              <i data-lucide="log-in" class="w-4 h-4"></i>
+              <span>Sign In as Cashier</span>
+            </button>
+          </div>
+        </div>
+
         <div>
           <label class="block font-bold text-slate-300 mb-1">Store Name</label>
           <input type="text" id="setting-store-name" class="w-full p-3 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 font-semibold focus:border-amber-500 focus:outline-none" />
@@ -2888,7 +3091,7 @@
 
   <!-- MODAL 12: SETTLE WHOLESALER RETURN & CREDIT NOTE MODAL -->
   <div id="settle-wholesaler-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-3 md:p-6">
-    <div class="modal-enter w-full max-w-lg bg-slate-950 border border-emerald-500/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+    <div class="modal-enter w-full max-w-lg bg-slate-950 border border-emerald-500/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
       
       <!-- Header -->
       <div class="bg-gradient-to-r from-emerald-950 to-slate-900 px-5 py-4 border-b border-emerald-500/40 flex items-center justify-between">
@@ -3217,7 +3420,7 @@
 
   <!-- MODAL 14: CONVERT TO SHELF STOCK MODAL -->
   <div id="modal-convert-to-stock" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-3 md:p-6">
-    <div class="modal-enter w-full max-w-md bg-slate-950 border border-blue-500/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+    <div class="modal-enter w-full max-w-md bg-slate-950 border border-blue-500/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
       
       <!-- Header -->
       <div class="bg-gradient-to-r from-blue-950 to-slate-900 px-5 py-4 border-b border-blue-500/40 flex items-center justify-between">
@@ -3324,7 +3527,294 @@
   </div>
 
   <!-- FLOATING TOAST NOTIFICATION CONTAINER (TOP RIGHT TO AVOID BOTTOM DOCK COLLISION) -->
-  <div id="toast-container" class="fixed top-16 sm:top-20 right-3 sm:right-6 z-50 flex flex-col gap-2 pointer-events-none w-full max-w-sm sm:max-w-md px-2 sm:px-0 no-print">
+    <!-- MODAL 15: POS CHECKOUT CONFIRMATION & PAYMENT SELECTOR -->
+  <div id="pos-checkout-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-3 sm:p-6 no-print">
+    <div class="modal-enter w-full max-w-lg bg-slate-950 border border-emerald-500/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      
+      <!-- Modal Header -->
+      <div class="bg-gradient-to-r from-emerald-950/80 to-slate-900 px-5 py-4 border-b border-emerald-500/30 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-600/30 border border-emerald-500/60 text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-950/40">
+            <i data-lucide="shopping-cart" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="text-base sm:text-lg font-black text-emerald-200">Confirm POS Sale</h2>
+            <p class="text-xs text-slate-400">Review cart items &amp; select payment method</p>
+          </div>
+        </div>
+        <button id="close-checkout-modal-btn" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 flex items-center justify-center cursor-pointer transition-all">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-4 sm:p-5 overflow-y-auto custom-scrollbar space-y-4 flex-1">
+        
+        <!-- Cart Items Summary -->
+        <div class="bg-slate-900/80 rounded-xl p-3.5 border border-slate-800 space-y-2">
+          <div class="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider pb-1 border-b border-slate-800">
+            <span>Staged Items</span>
+            <span id="checkout-total-units" class="text-slate-300 font-mono text-[11px]">0 units</span>
+          </div>
+          <div id="checkout-items-summary" class="max-h-48 overflow-y-auto custom-scrollbar pr-1 divide-y divide-slate-800/40">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Grand Total Callout -->
+        <div class="bg-gradient-to-r from-emerald-950/60 via-slate-900 to-slate-950 p-4 rounded-xl border border-emerald-500/40 flex items-center justify-between shadow-inner">
+          <div>
+            <div class="text-[11px] font-black uppercase tracking-wider text-emerald-400">Grand Total Due</div>
+            <div class="text-[11px] text-slate-400">Inclusive of all taxes</div>
+          </div>
+          <div id="checkout-grand-total" class="font-mono text-xl sm:text-2xl font-black text-emerald-400">
+            ₹ 0.00
+          </div>
+        </div>
+
+        <!-- Payment Method Selector -->
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-2">
+            Select Payment Method <span class="text-rose-400">*</span>
+          </label>
+          <div class="grid grid-cols-2 gap-3">
+            <button 
+              type="button" 
+              id="btn-pay-cash" 
+              class="p-3.5 rounded-xl border-2 border-emerald-500 bg-emerald-950/60 text-emerald-200 flex flex-col items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40 cursor-pointer"
+            >
+              <i data-lucide="banknote" class="w-6 h-6 text-emerald-400"></i>
+              <span class="text-xs font-black">CASH</span>
+              <span class="text-[10px] text-slate-400">Physical Currency</span>
+            </button>
+
+            <button 
+              type="button" 
+              id="btn-pay-upi" 
+              class="p-3.5 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-850 text-slate-400 flex flex-col items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <i data-lucide="qr-code" class="w-6 h-6 text-blue-400"></i>
+              <span class="text-xs font-black text-slate-200">UPI / QR</span>
+              <span class="text-[10px] text-slate-400">Instant Transfer</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Error Banner (Hidden by default) -->
+        <div id="checkout-error-banner" class="hidden p-3 rounded-xl bg-rose-950/60 border border-rose-600/60 text-rose-300 text-xs flex items-start gap-2.5">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-400 shrink-0 mt-0.5"></i>
+          <span id="checkout-error-text" class="leading-relaxed">Error processing checkout.</span>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="bg-slate-900/95 px-5 py-3.5 border-t border-slate-800/80 flex items-center justify-between gap-3">
+        <button 
+          type="button" 
+          id="btn-cancel-checkout" 
+          class="btn-touch px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer"
+        >
+          Back to Cart
+        </button>
+
+        <button 
+          type="button" 
+          id="btn-confirm-pos-checkout" 
+          class="btn-touch flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 cursor-pointer transition-all"
+        >
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span>Confirm Sale &amp; Print Receipt</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL 16: POS DIGITAL RECEIPT VOUCHER -->
+  <div id="pos-receipt-modal" class="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md hidden items-center justify-center p-3 sm:p-6">
+    <div id="pos-receipt-printable-area" class="modal-enter w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 sm:p-6 space-y-4 text-slate-100 max-h-[95vh] overflow-y-auto custom-scrollbar">
+      
+      <!-- Receipt Header -->
+      <div class="text-center space-y-1 pb-3 border-b border-dashed border-slate-700">
+        <div class="w-10 h-10 rounded-xl bg-emerald-600/30 border border-emerald-500/60 text-emerald-400 flex items-center justify-center mx-auto mb-1 no-print">
+          <i data-lucide="check-circle" class="w-6 h-6"></i>
+        </div>
+        <h2 id="receipt-store-name" class="text-lg font-black tracking-tight text-slate-100">Decent Motor Accessories</h2>
+        <div class="text-xs text-slate-400 uppercase font-bold tracking-wider">POS Sales Voucher / Cash Memo</div>
+      </div>
+
+      <!-- Receipt Metadata Row -->
+      <div class="text-xs bg-slate-950/60 p-3 rounded-xl border border-slate-800 space-y-1.5 font-mono">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">Receipt ID:</span>
+          <span id="receipt-id" class="font-bold text-slate-200">RCP-000000</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">Date &amp; Time:</span>
+          <span id="receipt-datetime" class="text-slate-300">--/--/----</span>
+        </div>
+        <div class="flex items-center justify-between pt-1 border-t border-slate-800">
+          <span class="text-slate-400">Payment:</span>
+          <span id="receipt-payment-badge" class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-950 text-emerald-300 border border-emerald-700/60">PAID IN CASH</span>
+        </div>
+      </div>
+
+      <!-- Items Table -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-slate-200">
+          <thead>
+            <tr class="border-b border-slate-700 text-[10px] text-slate-400 uppercase font-mono">
+              <th class="py-1.5 text-left font-bold">Item Description</th>
+              <th class="py-1.5 text-center font-bold">Qty</th>
+              <th class="py-1.5 text-right font-bold">Price</th>
+              <th class="py-1.5 text-right font-bold">Total</th>
+            </tr>
+          </thead>
+          <tbody id="receipt-items-tbody" class="divide-y divide-slate-800/60">
+            <!-- Items injected dynamically -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Totals Section -->
+      <div class="pt-3 border-t border-dashed border-slate-700 space-y-1.5 text-xs">
+        <div class="flex justify-between text-slate-400 font-mono">
+          <span>Total Units Sold:</span>
+          <span id="receipt-total-units" class="text-slate-200 font-bold">0 units</span>
+        </div>
+        <div class="flex justify-between items-center text-sm sm:text-base pt-1 font-mono">
+          <span class="font-black text-slate-100">GRAND TOTAL:</span>
+          <span id="receipt-grand-total" class="font-black text-emerald-400 text-lg">₹ 0.00</span>
+        </div>
+      </div>
+
+      <!-- Receipt Footer Note -->
+      <div class="text-center pt-2 text-[10px] text-slate-400 border-t border-slate-800 leading-relaxed">
+        <div>Thank you for your business! Please retain for warranty.</div>
+        <div class="font-mono text-emerald-400/80 font-bold mt-0.5">✓ Transaction Verified &amp; Stock Recorded</div>
+      </div>
+
+      <!-- Action Buttons (Hidden when printing) -->
+      <div class="pt-2 flex items-center gap-2 no-print">
+        <button 
+          type="button" 
+          id="btn-print-receipt" 
+          class="btn-touch flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
+        >
+          <i data-lucide="printer" class="w-4 h-4"></i>
+          <span>Print Receipt</span>
+        </button>
+
+        <button 
+          type="button" 
+          id="btn-close-receipt" 
+          class="btn-touch flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+        >
+          <i data-lucide="check" class="w-4 h-4 text-emerald-400"></i>
+          <span>New Sale / Done</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+    <!-- MODAL 17: CASHIER AUTHENTICATION MODAL -->
+  <div id="cashier-login-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-3 sm:p-4 no-print">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm p-4 sm:p-6 shadow-2xl space-y-4">
+      
+      <!-- Header -->
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-100">Cashier Authentication</h3>
+            <p class="text-[11px] text-slate-400">Supabase Auth Session</p>
+          </div>
+        </div>
+        <button type="button" id="close-cashier-modal-btn" class="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition-all cursor-pointer">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Alert / Status Banner -->
+      <div id="cashier-auth-alert" class="hidden text-xs p-2.5 rounded-xl border"></div>
+
+      <!-- VIEW 1: Active Session (Signed In) -->
+      <div id="cashier-signed-in-view" class="space-y-4 hidden">
+        <div class="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-2">
+          <div class="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Active Cashier Session</span>
+          </div>
+          <div class="space-y-1 text-xs">
+            <div class="text-slate-400">Signed in as:</div>
+            <div id="cashier-session-email" class="font-mono text-slate-200 font-semibold truncate"></div>
+            <div class="text-[11px] text-slate-400">User ID: <span id="cashier-session-uid" class="font-mono text-slate-300"></span></div>
+          </div>
+        </div>
+
+        <button 
+          type="button" 
+          id="btn-cashier-sign-out" 
+          class="btn-touch w-full py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+        >
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+          <span>Sign Out</span>
+        </button>
+      </div>
+
+      <!-- VIEW 2: Sign In Form (Signed Out) -->
+      <form id="cashier-login-form" class="space-y-3.5">
+        <div>
+          <label for="cashier-email-input" class="block text-xs font-semibold text-slate-300 mb-1">Cashier Email</label>
+          <input 
+            type="email" 
+            id="cashier-email-input" 
+            required 
+            autocomplete="email"
+            placeholder="cashier@autoparts.com"
+            class="w-full px-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-blue-500 transition-all"
+          />
+        </div>
+
+        <div>
+          <label for="cashier-password-input" class="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+          <input 
+            type="password" 
+            id="cashier-password-input" 
+            required 
+            autocomplete="current-password"
+            placeholder="••••••••"
+            class="w-full px-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-blue-500 transition-all"
+          />
+        </div>
+
+        <div class="pt-1 flex items-center gap-2">
+          <button 
+            type="button" 
+            id="btn-cancel-cashier-modal" 
+            class="btn-touch flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-all cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit" 
+            id="btn-cashier-sign-in" 
+            class="btn-touch flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-blue-600/30 cursor-pointer"
+          >
+            <i data-lucide="log-in" class="w-4 h-4"></i>
+            <span>Sign In</span>
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+<div id="toast-container" class="fixed top-16 sm:top-20 right-3 sm:right-6 z-50 flex flex-col gap-2 pointer-events-none w-full max-w-sm sm:max-w-md px-2 sm:px-0 no-print">
     <!-- Toasts injected dynamically -->
   </div>
 

@@ -13,6 +13,48 @@ export class InventoryManager {
     return (Number(part.stockGroundFloor) || 0) + (Number(part.stockFloor1) || 0) + (Number(part.stockFloor2) || 0);
   }
 
+  // Compact Floor Stock Indicator Helpers (Full Floor Names)
+  getFloorStockIndicators(part) {
+    const gf = Number(part.stockGroundFloor) || 0;
+    const f1 = Number(part.stockFloor1) || 0;
+    const f2 = Number(part.stockFloor2) || 0;
+
+    const floors = [];
+    if (gf > 0) floors.push({ name: 'Ground Floor', qty: gf, label: `Ground Floor · ${gf}` });
+    if (f1 > 0) floors.push({ name: '1st Floor', qty: f1, label: `1st Floor · ${f1}` });
+    if (f2 > 0) floors.push({ name: '2nd Floor', qty: f2, label: `2nd Floor · ${f2}` });
+
+    if (floors.length === 0) {
+      return [{ name: 'No Stock', qty: 0, label: 'No Stock', isNoStock: true }];
+    }
+    return floors;
+  }
+
+  getFloorStockIndicator(part) {
+    const items = this.getFloorStockIndicators(part);
+    return items.map(item => item.label).join(' | ');
+  }
+
+  getFloorStockIndicatorsHtml(part) {
+    const items = this.getFloorStockIndicators(part);
+    return items.map(item => {
+      if (item.isNoStock) {
+        return `
+          <span class="floor-stock-pill floor-stock-pill-empty inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] sm:text-[11px] font-mono font-medium bg-slate-900/90 border border-slate-800 text-slate-500 whitespace-nowrap shadow-xs" title="No stock available on any floor">
+            <i data-lucide="layers" class="w-3 h-3 text-slate-600 shrink-0"></i>
+            <span>No Stock</span>
+          </span>
+        `;
+      }
+      return `
+        <span class="floor-stock-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] sm:text-[11px] font-mono font-semibold bg-slate-900/90 border border-slate-700/80 text-slate-300 whitespace-nowrap shadow-xs" title="${item.name}: ${item.qty} units">
+          <i data-lucide="layers" class="w-3 h-3 text-slate-400 shrink-0"></i>
+          <span>${item.name} · <b class="text-emerald-400 font-bold">${item.qty}</b></span>
+        </span>
+      `;
+    }).join('');
+  }
+
   // Filter and Search with Smart Hyphen / Space / Special Character Agnostic Matching
   getFilteredProducts() {
     const query = this.app.searchQuery.trim().toLowerCase();
@@ -147,7 +189,7 @@ export class InventoryManager {
     if (this.hasSanitizedCatalog) return;
     this.hasSanitizedCatalog = true;
 
-    let modified = false;
+    const modifiedPartIds = new Set();
     this.app.products.forEach(p => {
       const text = `${p.name} ${p.partNumber}`.toLowerCase();
 
@@ -156,12 +198,13 @@ export class InventoryManager {
         p.category = 'DICKEY SHOCKER';
         if (p.name.includes('Gas Spring RH')) {
           p.name = p.name.replace('Gas Spring RH', '').replace('Gas Spring', '').trim();
+          modifiedPartIds.add(p.id);
         }
         if ((p.partNumber || '').startsWith('TDS9001')) {
           p.name = 'Omni/Van(1St, 2Nd, & 3Rd Gen)';
           p.compatibleModels = ['Omni / Van (1st, 2nd & 3rd Gen)'];
           p.vehicleBrand = 'Suzuki / Maruti';
-          modified = true;
+          modifiedPartIds.add(p.id);
         }
       }
 
@@ -169,7 +212,7 @@ export class InventoryManager {
       if (text.includes('shaft') || text.includes('tdsft') || text.includes('axle') || text.includes('cv joint')) {
         if (p.category === 'Filters' || !p.category) {
           p.category = 'Drive Shaft & Axle';
-          modified = true;
+          modifiedPartIds.add(p.id);
         }
       }
 
@@ -178,35 +221,35 @@ export class InventoryManager {
         if (text.includes('wagonr') || text.includes('wagon-r') || text.includes('swift') || text.includes('dzire') || text.includes('alto') || text.includes('baleno') || text.includes('ertiga') || text.includes('brezza') || text.includes('maruti') || text.includes('suzuki')) {
           p.vehicleBrand = 'Suzuki / Maruti';
           p.compatibleModels = text.includes('wagonr') ? ["Wagon-R K-Series (2018+)"] : ["Swift / Dzire"];
-          modified = true;
+          modifiedPartIds.add(p.id);
         } else if (text.includes('i10') || text.includes('xcent') || text.includes('verna') || text.includes('creta') || text.includes('venue') || text.includes('i20') || text.includes('hyundai')) {
           p.vehicleBrand = 'Hyundai';
           p.compatibleModels = text.includes('i10') ? ["Grand i10 Diesel / Xcent"] : ["Elite i20"];
-          modified = true;
+          modifiedPartIds.add(p.id);
         } else if (text.includes('fortuner') || text.includes('innova') || text.includes('crysta') || text.includes('corolla') || text.includes('toyota')) {
           p.vehicleBrand = 'Toyota';
           p.compatibleModels = text.includes('fortuner') ? ["Fortuner New Model (2015+)"] : ["Innova Crysta"];
-          modified = true;
+          modifiedPartIds.add(p.id);
         } else if (text.includes('scorpio') || text.includes('xuv') || text.includes('bolero') || text.includes('thar') || text.includes('mahindra')) {
           p.vehicleBrand = 'Mahindra';
           p.compatibleModels = text.includes('scorpio') ? ["Scorpio Classic / CRDe"] : ["XUV700"];
-          modified = true;
+          modifiedPartIds.add(p.id);
         } else if (text.includes('nexon') || text.includes('punch') || text.includes('altroz') || text.includes('tiago') || text.includes('tata')) {
           p.vehicleBrand = 'Tata';
           p.compatibleModels = text.includes('nexon') ? ["Nexon"] : ["Altroz / Punch"];
-          modified = true;
+          modifiedPartIds.add(p.id);
         }
       }
 
       // If costPrice is missing or <= 10, calculate realistic cost from sellingPrice
       if ((!p.costPrice || p.costPrice <= 10) && p.sellingPrice > 0) {
         p.costPrice = Math.round(p.sellingPrice * 0.7);
-        modified = true;
+        modifiedPartIds.add(p.id);
       }
     });
 
-    if (modified) {
-      this.app.saveProducts();
+    if (modifiedPartIds.size > 0) {
+      this.app.saveProducts(Array.from(modifiedPartIds));
     }
   }
 
@@ -297,6 +340,7 @@ export class InventoryManager {
 
     container.innerHTML = filtered.map(part => {
       const totalStock = this.getTotalStock(part);
+      const floorIndicatorText = this.getFloorStockIndicator(part);
       const groundStash = Number(part.stockGroundFloor) || 0;
       const floor1 = Number(part.stockFloor1) || 0;
       const floor2 = Number(part.stockFloor2) || 0;
@@ -317,77 +361,88 @@ export class InventoryManager {
       const batchQty = batchItem ? batchItem.quantity : 1;
 
       return `
-        <div class="part-card rounded-2xl p-3.5 sm:p-4 md:p-5 flex flex-col justify-between relative overflow-hidden ${
+        <div class="part-card rounded-2xl p-4 flex flex-col justify-between relative overflow-hidden ${
           hasGroundStash ? 'has-ground-stash' : ''
         } ${isBatchSelected ? 'is-batch-selected' : ''}" data-part-id="${part.id}">
           
-          <!-- TOP ROW: Vehicle Tag, Multi-Select Checkbox & Stock Badge -->
-          <div>
-            <div class="flex items-center justify-between gap-2 mb-2">
-              <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
-                <!-- Multi-Select Checkbox for Batch Printing -->
+          <!-- UPPER CONTENT SECTION -->
+          <div class="part-card-upper flex flex-col flex-1">
+            <!-- 1 & 2: CARD HEADER (Checkbox, Brand, Category on left; Stock Status Badge at extreme right) -->
+            <div class="part-card-header-row flex items-start justify-between gap-2 mb-2 min-w-0">
+              <div class="part-card-brand-category-group flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+                <!-- 1. Selection Checkbox -->
                 <button 
-                  class="btn-toggle-batch-select card-select-checkbox ${isBatchSelected ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/40' : 'text-transparent'}"
+                  class="btn-toggle-batch-select card-select-checkbox shrink-0 ${isBatchSelected ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/40' : 'text-transparent'}"
                   data-part-id="${part.id}"
                   title="${isBatchSelected ? 'Remove from Batch Print Queue' : 'Select for Batch Printing'}"
                 >
                   <i data-lucide="check" class="w-3.5 h-3.5 ${isBatchSelected ? 'stroke-[3]' : 'opacity-0'}"></i>
                 </button>
 
-                <span class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 border border-slate-700 text-amber-400 shrink-0">
+                <!-- Brand Badge -->
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 border border-slate-700 text-amber-400 shrink-0 whitespace-nowrap" title="${part.vehicleBrand || 'Universal'}">
                   ${brandLogoHtml}
-                  <span>${part.vehicleBrand}</span>
+                  <span>${part.vehicleBrand || 'Universal'}</span>
                 </span>
-                <span class="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-800/80 text-slate-300 border border-slate-800 shrink-0">
+
+                <!-- Category Badge -->
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-800/80 text-slate-300 border border-slate-800 shrink-0 whitespace-nowrap" title="${part.category || 'General'}">
                   ${this.app.getCategoryBadgeHtml({ name: part.category }, false)}
-                  <span>${part.category}</span>
+                  <span>${part.category || 'General'}</span>
                 </span>
               </div>
 
-              <!-- Stock Status Pill (Always Fixed, Never Squished, Never Broken) -->
-              <div class="shrink-0 whitespace-nowrap">
+              <!-- 2. Stock Status Badge (Always anchored to the right side of card header) -->
+              <div class="stock-status-badge-container shrink-0 whitespace-nowrap ml-auto">
                 ${
                   isOutOfStock
-                    ? `<span class="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-bold bg-rose-950 border border-rose-700/60 text-rose-400 whitespace-nowrap">
+                    ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-rose-950 border border-rose-700/60 text-rose-400 whitespace-nowrap shadow-xs">
                         <i data-lucide="alert-circle" class="w-3.5 h-3.5 shrink-0"></i> OUT OF STOCK
                       </span>`
                     : isLowStock
-                    ? `<span class="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-bold bg-amber-950 border border-amber-600/60 text-amber-300 whitespace-nowrap">
+                    ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-950 border border-amber-600/60 text-amber-300 whitespace-nowrap shadow-xs">
                         <i data-lucide="alert-triangle" class="w-3.5 h-3.5 shrink-0"></i> ONLY ${totalStock} LEFT
                       </span>`
-                    : `<span class="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-bold bg-emerald-950 border border-emerald-600/50 text-emerald-300 whitespace-nowrap">
+                    : `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-emerald-950 border border-emerald-600/50 text-emerald-300 whitespace-nowrap shadow-xs">
                         <i data-lucide="check" class="w-3.5 h-3.5 shrink-0"></i> ${totalStock} IN STOCK
                       </span>`
                 }
               </div>
             </div>
 
-            <!-- SUB ROW: Part Number (SKU) & Barcode Identifier Tags -->
-            <div class="flex items-center gap-1.5 flex-wrap mb-2.5">
-              <span class="px-2 sm:px-2.5 py-0.5 rounded-md text-[11px] sm:text-xs font-mono font-semibold bg-blue-950/60 border border-blue-800/40 text-blue-300 shrink-0">
+            <!-- 3. Part Number (SKU) & Barcode Identifier Tags -->
+            <div class="part-card-sub-row flex items-center gap-1.5 flex-wrap mb-2 min-w-0">
+              <span class="part-number-pill px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold bg-blue-950/60 border border-blue-800/40 text-blue-300">
                 ${part.partNumber}
               </span>
-              <span class="px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-mono font-semibold bg-emerald-950/40 border border-emerald-800/40 text-emerald-300 flex items-center gap-1 shrink-0" title="Product Barcode / SKU">
-                <i data-lucide="barcode" class="w-3 h-3 text-emerald-400"></i> ${part.barcode || part.partNumber}
+              <span class="part-barcode-pill px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold bg-emerald-950/40 border border-emerald-800/40 text-emerald-300 flex items-center gap-1" title="Product Barcode / SKU">
+                <i data-lucide="barcode" class="w-3.5 h-3.5 text-emerald-400"></i> ${part.barcode || part.partNumber}
               </span>
             </div>
 
-            <!-- PART NAME & BRAND -->
-            <h3 class="text-base md:text-lg font-bold text-slate-100 line-clamp-2 leading-snug">
+            <!-- 4. Floor Location & Quantity Indicators -->
+            <div class="part-card-floor-row flex items-center gap-1.5 flex-wrap mb-2.5 min-w-0">
+              ${this.getFloorStockIndicatorsHtml(part)}
+            </div>
+
+            <!-- 5. Product Name -->
+            <h3 class="part-card-title text-base font-bold text-slate-100 line-clamp-2 leading-snug">
               ${part.name}
             </h3>
-            <div class="text-xs text-slate-400 mt-1 flex items-center gap-2">
+
+            <!-- 6. Brand and Unit -->
+            <div class="part-card-brand-unit text-xs text-slate-400 mt-1 flex items-center gap-2">
               <span>Brand: <b class="text-slate-300 font-semibold">${part.brand}</b></span>
               <span>&bull;</span>
               <span>Unit: <b class="text-slate-300 font-semibold">${part.unit || 'Piece'}</b></span>
             </div>
 
-            <!-- COMPATIBLE CAR MODELS (Auto-Fitment Tag) -->
-            <div class="mt-2.5 flex items-start gap-1.5 text-xs text-slate-300 bg-slate-950/60 border border-slate-800/80 rounded-xl p-2.5">
+            <!-- 7. Compatible Cars Panel -->
+            <div class="part-card-fitment-panel mt-2.5 mb-2 flex items-start gap-1.5 text-xs text-slate-300 bg-slate-950/60 border border-slate-800/80 rounded-xl p-2.5">
               <i data-lucide="car" class="w-4 h-4 text-amber-400 shrink-0 mt-0.5"></i>
-              <div class="flex-1">
+              <div class="flex-1 min-w-0">
                 <span class="text-slate-400 text-[11px] block font-medium">Compatible Cars:</span>
-                <span class="font-bold text-slate-200">${(part.compatibleModels || []).join(', ') || 'Universal'}</span>
+                <span class="font-bold text-slate-200 line-clamp-2">${(part.compatibleModels || []).join(', ') || 'Universal'}</span>
               </div>
             </div>
 
@@ -437,33 +492,15 @@ export class InventoryManager {
                 `
                 : ''
             }
+          </div>
 
-            <!-- MULTI-FLOOR STORAGE LOCATIONS BREAKDOWN -->
-            <div class="mt-3 grid grid-cols-3 gap-1.5 text-center">
-              <div class="p-2 rounded-xl ${hasGroundStash ? 'bg-amber-950/50 border border-amber-500/50' : 'bg-slate-900/90 border border-slate-800'}">
-                <div class="text-[10px] uppercase font-bold text-slate-400">Ground Floor</div>
-                <div class="text-base font-black font-mono ${hasGroundStash ? 'text-amber-400' : (groundStash > 0 ? 'text-emerald-400' : 'text-slate-500')}">${groundStash}</div>
-                <div class="text-[9px] ${hasGroundStash ? 'text-amber-400/90 font-bold' : 'text-slate-500'} truncate">
-                  ${hasGroundStash ? 'Returned (Rack Up)' : (!isUpstairs ? (part.rackLocation || 'Designated Rack') : 'Counter')}
-                </div>
-              </div>
-              <div class="p-2 rounded-xl bg-slate-900/90 border border-slate-800">
-                <div class="text-[10px] uppercase font-bold text-slate-400">1st Floor</div>
-                <div class="text-base font-black font-mono ${floor1 > 0 ? 'text-emerald-400' : 'text-slate-500'}">${floor1}</div>
-                <div class="text-[9px] text-slate-400 truncate" title="${isUpstairs ? (part.rackLocation || 'Rack A-01') : 'Floor 1'}">${isUpstairs ? (part.rackLocation || 'Rack A-01') : 'Floor 1'}</div>
-              </div>
-              <div class="p-2 rounded-xl bg-slate-900/90 border border-slate-800">
-                <div class="text-[10px] uppercase font-bold text-slate-400">2nd Floor</div>
-                <div class="text-base font-black font-mono ${floor2 > 0 ? 'text-blue-400' : 'text-slate-500'}">${floor2}</div>
-                <div class="text-[9px] text-slate-400 truncate">Heavy Storage</div>
-              </div>
-            </div>
-
-            <!-- PRICE & COST INFO -->
-            <div class="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between">
+          <!-- LOWER SECTION (Price, Cost & Action Buttons Anchored to Bottom) -->
+          <div class="part-card-lower mt-auto pt-2">
+            <!-- 8. Selling Price & Cost Code -->
+            <div class="part-card-pricing-row pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
               <div>
                 <div class="text-[10px] uppercase font-bold text-slate-400">Selling Price (MRP)</div>
-                <div class="text-lg md:text-xl font-black font-mono text-emerald-400">
+                <div class="text-xl font-black font-mono text-emerald-400">
                   ₹ ${(part.sellingPrice || 0).toLocaleString('en-IN')}
                 </div>
               </div>
@@ -474,66 +511,65 @@ export class InventoryManager {
                 </div>
               </div>
             </div>
+
+            <!-- 9. Action Buttons -->
+            <div class="part-card-actions-row mt-3 pt-2.5 border-t border-slate-800/80 flex items-center gap-1.5">
+              <!-- Quick Sell 1 Unit -->
+              <button 
+                class="btn-quick-sell flex-1 btn-touch py-2.5 px-3 rounded-xl font-extrabold text-xs md:text-sm flex items-center justify-center gap-1.5 transition-all ${
+                  isOutOfStock
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/40'
+                }"
+                data-part-id="${part.id}"
+                ${isOutOfStock ? 'disabled' : ''}
+                title="Record instant sale of 1 unit"
+              >
+                <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+                <span>SELL 1</span>
+              </button>
+
+              <!-- Customer Return -->
+              <button 
+                class="btn-customer-return btn-touch p-2.5 rounded-xl bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all shrink-0"
+                data-part-id="${part.id}"
+                title="Customer returning this part (Unused or Defective)"
+              >
+                <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+              </button>
+
+              <!-- Print Barcode Sticker -->
+              <button 
+                class="btn-print-part-label btn-touch p-2.5 rounded-xl ${
+                  isBatchSelected 
+                    ? 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-600/30' 
+                    : 'bg-blue-950/60 hover:bg-blue-900/80 text-blue-300 border-blue-500/40'
+                } border text-xs font-bold transition-all shrink-0"
+                data-part-id="${part.id}"
+                title="${isBatchSelected ? `In Batch Queue (${batchQty}x) • Click to Print or Configure` : 'Print Thermal Barcode Box Sticker'}"
+              >
+                <i data-lucide="printer" class="w-4 h-4"></i>
+              </button>
+
+              <!-- Edit Part -->
+              <button 
+                class="btn-edit-part btn-touch p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-bold transition-all shrink-0"
+                data-part-id="${part.id}"
+                title="Edit part details, rack location & stock numbers"
+              >
+                <i data-lucide="pencil" class="w-4 h-4"></i>
+              </button>
+
+              <!-- Delete Part -->
+              <button 
+                class="btn-delete-part btn-touch p-2.5 rounded-xl bg-rose-950/50 hover:bg-rose-900/90 text-rose-400 hover:text-rose-200 border border-rose-800/40 text-xs font-bold transition-all shrink-0"
+                data-part-id="${part.id}"
+                title="Permanently delete this part"
+              >
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </div>
           </div>
-
-          <!-- ACTION BUTTONS -->
-          <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center gap-2">
-            <!-- Quick Sell 1 Unit -->
-            <button 
-              class="btn-quick-sell flex-1 btn-touch py-2.5 px-3 rounded-xl font-extrabold text-xs md:text-sm flex items-center justify-center gap-1.5 transition-all ${
-                isOutOfStock
-                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/40'
-              }"
-              data-part-id="${part.id}"
-              ${isOutOfStock ? 'disabled' : ''}
-              title="Record instant sale of 1 unit"
-            >
-              <i data-lucide="shopping-cart" class="w-4 h-4"></i>
-              <span>SELL 1</span>
-            </button>
-
-            <!-- Customer Return (Problem 2) -->
-            <button 
-              class="btn-customer-return btn-touch p-2.5 rounded-xl bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all"
-              data-part-id="${part.id}"
-              title="Customer returning this part (Unused or Defective)"
-            >
-              <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
-            </button>
-
-            <!-- Print Barcode Sticker (Single / Batch indicator) -->
-            <button 
-              class="btn-print-part-label btn-touch p-2.5 rounded-xl ${
-                isBatchSelected 
-                  ? 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-600/30' 
-                  : 'bg-blue-950/60 hover:bg-blue-900/80 text-blue-300 border-blue-500/40'
-              } border text-xs font-bold transition-all"
-              data-part-id="${part.id}"
-              title="${isBatchSelected ? `In Batch Queue (${batchQty}x) • Click to Print or Configure` : 'Print Thermal Barcode Box Sticker'}"
-            >
-              <i data-lucide="printer" class="w-4 h-4"></i>
-            </button>
-
-            <!-- Edit Part -->
-            <button 
-              class="btn-edit-part btn-touch p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-bold transition-all"
-              data-part-id="${part.id}"
-              title="Edit part details, rack location & stock numbers"
-            >
-              <i data-lucide="pencil" class="w-4 h-4"></i>
-            </button>
-
-            <!-- Delete Part -->
-            <button 
-              class="btn-delete-part btn-touch p-2.5 rounded-xl bg-rose-950/50 hover:bg-rose-900/90 text-rose-400 hover:text-rose-200 border border-rose-800/40 text-xs font-bold transition-all"
-              data-part-id="${part.id}"
-              title="Permanently delete this part"
-            >
-              <i data-lucide="trash-2" class="w-4 h-4"></i>
-            </button>
-          </div>
-
         </div>
       `;
     }).join('');
@@ -597,7 +633,7 @@ export class InventoryManager {
       notes: `Sold ${deductedFrom.join(', ')}`
     });
 
-    this.app.saveProducts();
+    this.app.saveProducts([part.id]);
     this.app.storage.saveOutflows(this.app.outflowLog);
     this.app.sound.playSaleChime();
 
@@ -882,7 +918,8 @@ export class InventoryManager {
       this.app.showToast(`Added "${name}" to inventory!`, "success");
     }
 
-    this.app.saveProducts();
+    const savedPartId = editPartId || (this.app.products[0] ? this.app.products[0].id : null);
+    this.app.saveProducts(savedPartId ? [savedPartId] : null);
     this.app.sound.playSaleChime();
     this.closeAddPartModal();
     this.renderProducts();

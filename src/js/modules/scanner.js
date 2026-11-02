@@ -103,7 +103,7 @@ export class ScannerEngine {
     });
   }
 
-  showLastScannedFeedback(part, quantitySold = 1) {
+  showLastScannedFeedback(part, qty = 1, context = 'cart') {
     const card = document.getElementById('last-scanned-container');
     const nameEl = document.getElementById('last-scanned-name');
     const priceEl = document.getElementById('last-scanned-price');
@@ -113,8 +113,15 @@ export class ScannerEngine {
     if (!card || !part) return;
 
     if (nameEl) nameEl.textContent = part.name;
-    if (priceEl) priceEl.textContent = this.app.formatCurrency ? this.app.formatCurrency(part.sellingPrice) : `₹ ${part.sellingPrice}`;
-    if (detailsEl) detailsEl.textContent = `Auto-Deducted ${quantitySold}x unit from ${part.rackLocation || 'Shelf'}. Remaining: ${this.app.inventoryManager.getTotalStock(part)} in stock.`;
+    const priceNum = Number(part.sellingPrice) || 0;
+    if (priceEl) priceEl.textContent = this.app.formatCurrency ? this.app.formatCurrency(priceNum) : `₹ ${priceNum.toLocaleString('en-IN')}`;
+    if (detailsEl) {
+      if (context === 'cart') {
+        detailsEl.textContent = `Added to Cart (${qty}x in cart) • Rack: ${part.rackLocation || 'Shelf'} • Available: ${this.app.inventoryManager.getTotalStock(part)} in stock.`;
+      } else {
+        detailsEl.textContent = `Auto-Deducted ${qty}x unit from ${part.rackLocation || 'Shelf'}. Remaining: ${this.app.inventoryManager.getTotalStock(part)} in stock.`;
+      }
+    }
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     card.classList.remove('hidden');

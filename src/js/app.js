@@ -25,8 +25,83 @@ class AutoPartsApp {
     // Active Workspace State ('counter' | 'outflow' | 'pricing' | 'claims')
     this.currentWorkspace = "counter";
 
-    // Core State
     this.products = this.storage.getProducts();
+    if (typeof window !== 'undefined' && window.location && window.location.search && window.location.search.includes('test_stock_cases=1')) {
+      this.products = [
+        {
+          id: "part-case1",
+          name: "Rear Shock Absorber Strut (Single Floor)",
+          partNumber: "SA-REAR-01",
+          barcode: "890100100001",
+          brand: "Monroe",
+          category: "Suspension",
+          vehicleBrand: "Honda",
+          compatibleModels: ["City 2016-2022", "Civic 2018-2023"],
+          costPrice: 900.00,
+          sellingPrice: 1600.00,
+          stockGroundFloor: 0,
+          stockFloor1: 0,
+          stockFloor2: 1, // Case 1: 2F · 1
+          rackLocation: "Floor 2 - Rack B-12",
+          minStockAlert: 1,
+          unit: "Piece"
+        },
+        {
+          id: "part-case2",
+          name: "Front Ceramic Brake Pads (Two Floors)",
+          partNumber: "BP-FRONT-02",
+          barcode: "890100100002",
+          brand: "Bosch",
+          category: "Brakes",
+          vehicleBrand: "Toyota",
+          compatibleModels: ["Corolla 2015-2022", "Yaris 2018-2023"],
+          costPrice: 1100.00,
+          sellingPrice: 1950.00,
+          stockGroundFloor: 2, // Case 2: GF: 2 | 1F: 3
+          stockFloor1: 3,
+          stockFloor2: 0,
+          rackLocation: "Floor 1 - Rack A-04",
+          minStockAlert: 2,
+          unit: "Set"
+        },
+        {
+          id: "part-case3",
+          name: "Engine Oil Filter Cartridge (All Floors)",
+          partNumber: "OF-ALL-03",
+          barcode: "890100100003",
+          brand: "Mann-Filter",
+          category: "Filters",
+          vehicleBrand: "Suzuki / Maruti",
+          compatibleModels: ["Swift 2015-2023", "Dzire 2017-2023"],
+          costPrice: 250.00,
+          sellingPrice: 480.00,
+          stockGroundFloor: 2, // Case 3: GF: 2 | 1F: 3 | 2F: 1
+          stockFloor1: 3,
+          stockFloor2: 1,
+          rackLocation: "Floor 1 - Rack F-02",
+          minStockAlert: 3,
+          unit: "Piece"
+        },
+        {
+          id: "part-case4",
+          name: "Alternator Ribbed V-Belt (Out of Stock)",
+          partNumber: "VB-OUT-04",
+          barcode: "890100100004",
+          brand: "Continental",
+          category: "Belts",
+          vehicleBrand: "Hyundai",
+          compatibleModels: ["i20 2016-2022", "Verna 2018-2023"],
+          costPrice: 400.00,
+          sellingPrice: 750.00,
+          stockGroundFloor: 0, // Case 4: No Stock
+          stockFloor1: 0,
+          stockFloor2: 0,
+          rackLocation: "Floor 1 - Rack C-01",
+          minStockAlert: 1,
+          unit: "Piece"
+        }
+      ];
+    }
     this.vehicleBrands = this.storage.getVehicleBrands();
     this.categories = this.storage.getCategories();
     this.outflowLog = this.storage.getOutflows();
@@ -43,6 +118,21 @@ class AutoPartsApp {
 
     // Batch Print Queue State (key: partId, value: { part, quantity })
     this.batchPrintQueue = new Map();
+
+    // POS Cart Drawer & State (Phase 3 In-Memory Cart & Phase 5 POS Checkout)
+    this.isCartDrawerOpen = false;
+    this.cart = []; // In-memory cart array: { id, part, quantity, sellingPrice, itemTotal }
+    this.lastScannedBarcode = '';
+    this.lastScanTime = 0;
+    this.selectedPaymentMethod = 'CASH';
+    this.isProcessingCheckout = false;
+    this.currentCheckoutId = null;
+    this.pendingCheckoutRecord = null;
+
+    // Cashier Authentication State (Phase 5 Supabase Auth)
+    this.cashierSession = null;
+    this.cashierUser = null;
+    this.authInitPromise = null;
 
     // Helper functions on App instance for modules
     this.getBrandBadgeHtml = getBrandBadgeHtml;
@@ -85,17 +175,51 @@ class AutoPartsApp {
     // Initialize Supabase Live Cloud Sync & Realtime Multi-Device WebSockets
     this.storage.initCloudSync(this);
 
+    // Initial Cart Drawer Render (Phase 3 In-Memory Cart)
+    this.renderCartDrawer();
+
+    // Safe Checkout Recovery (Phase 5 Pending / Uncertain Transaction Recovery)
+    this.restorePendingCheckout();
+
+    // Cashier Authentication Session Initialization (Phase 5 Supabase Auth)
+    this.authInitPromise = this.initCashierAuth();
+
     if (window.lucide) lucide.createIcons();
     console.log("🚀 AutoParts Pro Engine initialized with 5-Workspace Navigation & Live Cloud Sync.");
   }
 
-  saveProducts() {
-    this.storage.saveProducts(this.products);
+  saveProducts(affectedIds = null) {
+    this.storage.saveProducts(this.products, affectedIds);
   }
 
   formatCurrency(num) {
     const symbol = this.settings.currencySymbol || "₹";
-    return `${symbol} ${(num || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+    const val = Number(num);
+    const safeNum = (Number.isFinite(val) && !Number.isNaN(val)) ? val : 0;
+    return `${symbol} ${safeNum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  // Phase 4 Price & Quantity Integrity Validators
+  validateSellingPrice(price) {
+    if (price === null || price === undefined || price === '') {
+      return { isValid: false, price: 0, reason: 'Price is missing' };
+    }
+    const num = Number(price);
+    if (!Number.isFinite(num) || Number.isNaN(num)) {
+      return { isValid: false, price: 0, reason: 'Price is not a valid number' };
+    }
+    if (num <= 0) {
+      return { isValid: false, price: num, reason: num === 0 ? 'Selling price cannot be zero (₹0.00)' : 'Selling price cannot be negative' };
+    }
+    return { isValid: true, price: Math.round(num * 100) / 100, reason: '' };
+  }
+
+  sanitizeQuantity(qty) {
+    const parsed = parseInt(qty, 10);
+    if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed < 1) {
+      return 1;
+    }
+    return parsed;
   }
 
   // 4-Workspace Switcher (Zero-Friction State Preservation)
@@ -224,8 +348,12 @@ class AutoPartsApp {
         }
       }
 
-      // Escape key clears search or closes modal
+      // Escape key clears search or closes modal / cart drawer
       if (e.key === 'Escape') {
+        if (this.isCartDrawerOpen) {
+          this.closeCartDrawer();
+          return;
+        }
         const searchInput = document.getElementById('search-input');
         if (document.activeElement === searchInput) {
           if (this.searchQuery) {
@@ -238,6 +366,1149 @@ class AutoPartsApp {
         }
       }
     });
+  }
+
+  // POS Cart Drawer UI Controls (Phase 3 In-Memory Cart)
+  openCartDrawer() {
+    this.sound.playClick();
+    const drawer = document.getElementById('cart-drawer');
+    const backdrop = document.getElementById('cart-drawer-backdrop');
+    if (drawer && backdrop) {
+      drawer.classList.add('cart-drawer-open');
+      backdrop.classList.add('backdrop-active');
+      this.isCartDrawerOpen = true;
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+
+  closeCartDrawer() {
+    this.sound.playClick();
+    const drawer = document.getElementById('cart-drawer');
+    const backdrop = document.getElementById('cart-drawer-backdrop');
+    if (drawer && backdrop) {
+      drawer.classList.remove('cart-drawer-open');
+      backdrop.classList.remove('backdrop-active');
+      this.isCartDrawerOpen = false;
+    }
+  }
+
+  toggleCartDrawer() {
+    if (this.isCartDrawerOpen) {
+      this.closeCartDrawer();
+    } else {
+      this.openCartDrawer();
+    }
+  }
+
+  renderCartDrawer() {
+    const headerCount = document.getElementById('header-cart-count');
+    const itemsList = document.getElementById('cart-items-list');
+    const emptyState = document.getElementById('cart-empty-state');
+    const footerTotals = document.getElementById('cart-footer-totals');
+    const totalUnitsText = document.getElementById('cart-total-units-text');
+    const grandTotalAmount = document.getElementById('cart-grand-total-amount');
+
+    const totalUnits = this.cart.reduce((sum, item) => sum + this.sanitizeQuantity(item.quantity), 0);
+    const grandTotal = this.cart.reduce((sum, item) => {
+      const qty = this.sanitizeQuantity(item.quantity);
+      const priceVal = this.validateSellingPrice(item.sellingPrice);
+      const price = priceVal.isValid ? priceVal.price : 0;
+      return sum + (qty * price);
+    }, 0);
+    const cleanGrandTotal = Math.round(grandTotal * 100) / 100;
+
+    // Update header cart count badge
+    if (headerCount) {
+      headerCount.textContent = totalUnits;
+    }
+
+    if (!itemsList || !emptyState) return;
+
+    if (this.cart.length === 0) {
+      emptyState.classList.remove('hidden');
+      itemsList.classList.add('hidden');
+      itemsList.innerHTML = '';
+      if (footerTotals) footerTotals.classList.add('hidden');
+      if (totalUnitsText) totalUnitsText.textContent = '0 parts (0 units)';
+      if (grandTotalAmount) grandTotalAmount.textContent = this.formatCurrency(0);
+
+      const completeSaleBtn = document.getElementById('btn-complete-sale');
+      if (completeSaleBtn) {
+        completeSaleBtn.disabled = true;
+        completeSaleBtn.classList.add('cursor-not-allowed', 'opacity-60');
+        completeSaleBtn.classList.remove('cursor-pointer', 'hover:bg-emerald-500', 'bg-emerald-600');
+      }
+      return;
+    }
+
+    emptyState.classList.add('hidden');
+    itemsList.classList.remove('hidden');
+    if (footerTotals) footerTotals.classList.remove('hidden');
+
+    const completeSaleBtn = document.getElementById('btn-complete-sale');
+    if (completeSaleBtn) {
+      completeSaleBtn.disabled = false;
+      completeSaleBtn.classList.remove('cursor-not-allowed', 'opacity-60', 'opacity-80');
+      completeSaleBtn.classList.add('cursor-pointer', 'bg-emerald-600', 'hover:bg-emerald-500');
+    }
+
+    if (totalUnitsText) {
+      totalUnitsText.textContent = `${this.cart.length} ${this.cart.length === 1 ? 'part' : 'parts'} (${totalUnits} ${totalUnits === 1 ? 'unit' : 'units'})`;
+    }
+    if (grandTotalAmount) {
+      grandTotalAmount.textContent = this.formatCurrency(cleanGrandTotal);
+    }
+
+    // Render each cart item with validated fields
+    itemsList.innerHTML = this.cart.map(item => {
+      const part = item.part || {};
+      const totalStock = Math.max(0, parseInt(this.inventoryManager.getTotalStock(part), 10) || 0);
+      const partName = (part.name && String(part.name).trim()) || 'Unnamed Part';
+      const partNumber = (part.partNumber && String(part.partNumber).trim()) || 'NO-SKU';
+      const barcode = (part.barcode && String(part.barcode).trim()) || '';
+      const oemBrand = (part.brand && String(part.brand).trim()) || 'Generic OEM';
+      const vehicleBrand = (part.vehicleBrand && String(part.vehicleBrand).trim()) || 'Universal';
+      const modelsText = (part.compatibleModels && Array.isArray(part.compatibleModels) && part.compatibleModels.length > 0)
+        ? `Fits: ${part.compatibleModels.join(', ')}`
+        : 'Universal Fitment';
+      const rackLocation = (part.rackLocation && String(part.rackLocation).trim()) || 'Not Assigned';
+      const qty = this.sanitizeQuantity(item.quantity);
+      const priceVal = this.validateSellingPrice(item.sellingPrice);
+      const unitPrice = priceVal.isValid ? priceVal.price : 0;
+      const itemSubtotal = Math.round(qty * unitPrice * 100) / 100;
+      const isAtStockLimit = qty >= totalStock;
+      const isDecrementRemove = qty === 1;
+
+      return `
+        <div class="rounded-2xl p-3.5 sm:p-4 bg-slate-900/95 border-2 border-slate-800 hover:border-slate-700 transition-all shadow-md space-y-3 relative" data-part-id="${item.id}">
+          <!-- Top Status & Identifiers Row -->
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <!-- Vehicle Brand Pill -->
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-slate-800 border border-slate-700 text-amber-400">
+                <i data-lucide="car" class="w-3 h-3 text-amber-400"></i>
+                <span>${vehicleBrand}</span>
+              </span>
+
+              <!-- OEM Brand Pill (Explicitly preserved from part.brand) -->
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-extrabold bg-blue-950/80 text-blue-300 border border-blue-700/60" title="OEM / Manufacturer Brand">
+                <i data-lucide="shield" class="w-3 h-3 text-blue-400"></i>
+                <span>OEM Brand: ${oemBrand}</span>
+              </span>
+            </div>
+
+            <!-- Physical Available Stock Badge -->
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-bold ${totalStock <= 0 ? 'bg-rose-950/80 border-rose-700/60 text-rose-300' : 'bg-emerald-950/80 border-emerald-700/60 text-emerald-300'} shrink-0">
+              <i data-lucide="${totalStock <= 0 ? 'alert-triangle' : 'check'}" class="w-3 h-3 ${totalStock <= 0 ? 'text-rose-400' : 'text-emerald-400'}"></i>
+              <span>${totalStock} in stock</span>
+            </span>
+          </div>
+
+          <!-- Part Title & SKU -->
+          <div>
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <span class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-blue-950 text-blue-300 border border-blue-800/40">
+                ${partNumber}
+              </span>
+              ${barcode ? `
+                <span class="text-[10px] font-mono text-slate-400">
+                  BARCODE: ${barcode}
+                </span>
+              ` : ''}
+            </div>
+            <h3 class="text-xs sm:text-sm font-extrabold text-slate-100 leading-snug">
+              ${partName}
+            </h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              ${modelsText}
+            </p>
+          </div>
+
+          <!-- Shelf Location Info -->
+          <div class="text-[11px] text-slate-400 bg-slate-950/70 p-2 rounded-xl border border-slate-800/80 flex items-center justify-between">
+            <span class="flex items-center gap-1">
+              <span>📍 Shelf:</span>
+              <b class="text-slate-200">${rackLocation}</b>
+            </span>
+            <span class="text-[10px] text-slate-500 font-mono">
+              Ground: ${part.stockGroundFloor || 0} | Fl 1: ${part.stockFloor1 || 0} | Fl 2: ${part.stockFloor2 || 0}
+            </span>
+          </div>
+
+          <!-- Price & Quantity Bar (Customer-Facing Selling Price ONLY) -->
+          <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-3">
+            <!-- Selling Price -->
+            <div>
+              <div class="text-[10px] font-bold uppercase text-slate-400">Customer Price</div>
+              <div class="text-sm sm:text-base font-black text-emerald-400 font-mono">
+                ${priceVal.isValid ? this.formatCurrency(unitPrice) : '<span class="text-rose-400 text-xs">Invalid Price</span>'}
+              </div>
+            </div>
+
+            <!-- Quantity Controls (+ and - and numeric display) -->
+            <div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <button 
+                type="button" 
+                class="cart-qty-btn cart-qty-dec w-7 h-7 rounded-lg ${isDecrementRemove ? 'bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/40' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'} flex items-center justify-center font-black transition-all cursor-pointer"
+                data-part-id="${item.id}"
+                title="${isDecrementRemove ? 'Remove item from cart' : 'Decrease quantity by 1'}"
+                aria-label="${isDecrementRemove ? 'Remove item from cart' : 'Decrease quantity'}"
+              >
+                <i data-lucide="${isDecrementRemove ? 'trash-2' : 'minus'}" class="w-3.5 h-3.5"></i>
+              </button>
+              <input 
+                type="text" 
+                value="${qty}" 
+                readonly 
+                class="w-8 text-center bg-transparent text-slate-100 font-mono font-bold text-xs focus:outline-none cursor-default"
+                aria-label="Cart Item Quantity"
+              />
+              <button 
+                type="button" 
+                class="cart-qty-btn cart-qty-inc w-7 h-7 rounded-lg ${isAtStockLimit ? 'bg-slate-800/40 text-slate-600 cursor-not-allowed border border-slate-800' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer'} flex items-center justify-center font-black transition-all"
+                data-part-id="${item.id}"
+                ${isAtStockLimit ? 'disabled' : ''}
+                title="${isAtStockLimit ? `Stock limit reached (${totalStock} available in inventory)` : 'Increase quantity by 1'}"
+                aria-label="Increase Quantity"
+              >
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+            <!-- Line Subtotal & Remove Button -->
+            <div class="flex items-center gap-2">
+              <div class="text-right">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Subtotal</div>
+                <div class="text-sm sm:text-base font-black text-amber-400 font-mono">
+                  ${priceVal.isValid ? this.formatCurrency(itemSubtotal) : '<span class="text-rose-400 text-xs">₹ 0.00</span>'}
+                </div>
+              </div>
+              <button 
+                type="button" 
+                class="cart-remove-item-btn w-7 h-7 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/50 flex items-center justify-center transition-all cursor-pointer"
+                data-part-id="${item.id}"
+                title="Remove item from cart"
+                aria-label="Remove item"
+              >
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  // --- CASHIER AUTHENTICATION (Phase 5 Supabase Auth) ---
+  async initCashierAuth() {
+    try {
+      // 1. Listen for auth state changes
+      if (this.storage && typeof this.storage.onAuthStateChange === 'function') {
+        this.storage.onAuthStateChange((event, session) => {
+          this.cashierSession = session || null;
+          this.cashierUser = session ? session.user : null;
+          this.updateCashierAuthUi();
+        });
+      }
+
+      // 2. Restore active session
+      if (this.storage && typeof this.storage.getSession === 'function') {
+        const { data, error } = await this.storage.getSession();
+        if (data && data.session) {
+          this.cashierSession = data.session;
+          this.cashierUser = data.session.user;
+        } else {
+          this.cashierSession = null;
+          this.cashierUser = null;
+        }
+      }
+    } catch (err) {
+      console.warn("Cashier auth session restore notice:", err);
+      this.cashierSession = null;
+      this.cashierUser = null;
+    } finally {
+      this.updateCashierAuthUi();
+    }
+  }
+
+  updateCashierAuthUi() {
+    const badge = document.getElementById('cashier-auth-badge');
+    const dot = document.getElementById('cashier-status-dot');
+    const text = document.getElementById('cashier-status-text');
+    const signedInView = document.getElementById('cashier-signed-in-view');
+    const loginForm = document.getElementById('cashier-login-form');
+    const sessionEmail = document.getElementById('cashier-session-email');
+    const sessionUid = document.getElementById('cashier-session-uid');
+
+    // Settings Modal Cashier Account Elements
+    const sBadge = document.getElementById('settings-cashier-status-badge');
+    const sDot = document.getElementById('settings-cashier-dot');
+    const sLabel = document.getElementById('settings-cashier-label');
+    const sSignedIn = document.getElementById('settings-cashier-signed-in');
+    const sSignedOut = document.getElementById('settings-cashier-signed-out');
+    const sEmail = document.getElementById('settings-cashier-email');
+    const sUid = document.getElementById('settings-cashier-uid');
+
+    if (this.cashierUser && this.cashierSession) {
+      const email = this.cashierUser.email || 'Cashier';
+      const shortEmail = email.length > 18 ? email.substring(0, 15) + '...' : email;
+      if (badge) {
+        badge.title = `Signed in as Cashier (${email}).`;
+        badge.classList.remove('bg-slate-800/80', 'border-slate-700', 'text-slate-300');
+        badge.classList.add('bg-emerald-950/60', 'border-emerald-500/40', 'text-emerald-300');
+      }
+      if (dot) {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+      }
+      if (text) {
+        text.textContent = shortEmail;
+      }
+      if (signedInView) {
+        signedInView.classList.remove('hidden');
+      }
+      if (loginForm) {
+        loginForm.classList.add('hidden');
+      }
+      if (sessionEmail) {
+        sessionEmail.textContent = email;
+      }
+      if (sessionUid) {
+        sessionUid.textContent = this.cashierUser.id || 'N/A';
+      }
+
+      // Settings Cashier Account Active State
+      if (sBadge) {
+        sBadge.className = 'flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-950/70 border border-emerald-500/40 text-emerald-300';
+      }
+      if (sDot) {
+        sDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0';
+      }
+      if (sLabel) {
+        sLabel.textContent = 'Active Session';
+      }
+      if (sSignedIn) sSignedIn.classList.remove('hidden');
+      if (sSignedOut) sSignedOut.classList.add('hidden');
+      if (sEmail) sEmail.textContent = email;
+      if (sUid) sUid.textContent = this.cashierUser.id || 'N/A';
+    } else {
+      if (badge) {
+        badge.title = 'Cashier Authentication';
+        badge.classList.remove('bg-emerald-950/60', 'border-emerald-500/40', 'text-emerald-300');
+        badge.classList.add('bg-slate-800/80', 'border-slate-700', 'text-slate-300');
+      }
+      if (dot) {
+        dot.className = 'w-2 h-2 rounded-full bg-slate-500 shrink-0';
+      }
+      if (text) {
+        text.textContent = 'Cashier Login';
+      }
+      if (signedInView) {
+        signedInView.classList.add('hidden');
+      }
+      if (loginForm) {
+        loginForm.classList.remove('hidden');
+      }
+      if (sessionEmail) sessionEmail.textContent = '';
+      if (sessionUid) sessionUid.textContent = '';
+
+      // Settings Cashier Account Signed Out State
+      if (sBadge) {
+        sBadge.className = 'flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 border border-slate-700 text-slate-400';
+      }
+      if (sDot) {
+        sDot.className = 'w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0';
+      }
+      if (sLabel) {
+        sLabel.textContent = 'Signed Out';
+      }
+      if (sSignedIn) sSignedIn.classList.add('hidden');
+      if (sSignedOut) sSignedOut.classList.remove('hidden');
+      if (sEmail) sEmail.textContent = '';
+      if (sUid) sUid.textContent = '';
+    }
+    if (window.lucide) lucide.createIcons();
+  }
+
+  openCashierLoginModal() {
+    const modal = document.getElementById('cashier-login-modal');
+    const alertBox = document.getElementById('cashier-auth-alert');
+    if (alertBox) {
+      alertBox.className = 'hidden text-xs p-2.5 rounded-xl border';
+      alertBox.textContent = '';
+    }
+    this.updateCashierAuthUi();
+    if (modal) modal.classList.remove('hidden');
+    const emailInput = document.getElementById('cashier-email-input');
+    if (emailInput && !this.cashierUser) {
+      setTimeout(() => emailInput.focus(), 50);
+    }
+  }
+
+  closeCashierLoginModal() {
+    const modal = document.getElementById('cashier-login-modal');
+    if (modal) modal.classList.add('hidden');
+    const passwordInput = document.getElementById('cashier-password-input');
+    if (passwordInput) passwordInput.value = '';
+    const alertBox = document.getElementById('cashier-auth-alert');
+    if (alertBox) {
+      alertBox.className = 'hidden text-xs p-2.5 rounded-xl border';
+      alertBox.textContent = '';
+    }
+  }
+
+  async handleCashierSignIn(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const emailInput = document.getElementById('cashier-email-input');
+    const passwordInput = document.getElementById('cashier-password-input');
+    const alertBox = document.getElementById('cashier-auth-alert');
+    const submitBtn = document.getElementById('btn-cashier-sign-in');
+
+    const email = emailInput ? emailInput.value.trim() : '';
+    const password = passwordInput ? passwordInput.value : '';
+
+    if (!email || !password) {
+      if (alertBox) {
+        alertBox.className = 'text-xs p-2.5 rounded-xl border bg-amber-950/60 border-amber-500/50 text-amber-300 block';
+        alertBox.textContent = 'Please enter both email and password.';
+      }
+      return;
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Signing in...</span>';
+      if (window.lucide) lucide.createIcons();
+    }
+
+    try {
+      const { data, error } = await this.storage.signIn(email, password);
+
+      if (error) {
+        if (alertBox) {
+          alertBox.className = 'text-xs p-2.5 rounded-xl border bg-rose-950/60 border-rose-500/50 text-rose-300 block';
+          alertBox.textContent = error.message || 'Authentication failed.';
+        }
+        this.showToast(error.message || 'Authentication failed', 'error');
+        return;
+      }
+
+      if (data && data.session) {
+        this.cashierSession = data.session;
+        this.cashierUser = data.session.user;
+        this.updateCashierAuthUi();
+        this.showToast(`Signed in as ${this.cashierUser.email}`, 'success');
+        if (passwordInput) passwordInput.value = '';
+
+        // If checkout modal was waiting on cashier sign-in, update confirm button text
+        const confirmBtn = document.getElementById('btn-confirm-pos-checkout');
+        if (confirmBtn && confirmBtn.innerHTML.includes('Sign In to Complete Sale')) {
+          confirmBtn.innerHTML = `
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            <span>Confirm & Complete Sale</span>
+          `;
+          if (window.lucide) lucide.createIcons();
+        }
+
+        setTimeout(() => this.closeCashierLoginModal(), 400);
+      } else {
+        if (alertBox) {
+          alertBox.className = 'text-xs p-2.5 rounded-xl border bg-amber-950/60 border-amber-500/50 text-amber-300 block';
+          alertBox.textContent = 'Sign-in completed without an active session.';
+        }
+      }
+    } catch (err) {
+      if (alertBox) {
+        alertBox.className = 'text-xs p-2.5 rounded-xl border bg-rose-950/60 border-rose-500/50 text-rose-300 block';
+        alertBox.textContent = err.message || 'An unexpected error occurred during sign-in.';
+      }
+      this.showToast(err.message || 'Sign in error', 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4"></i><span>Sign In</span>';
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+  }
+
+  async handleCashierSignOut() {
+    const alertBox = document.getElementById('cashier-auth-alert');
+    const signOutBtn = document.getElementById('btn-cashier-sign-out');
+
+    if (signOutBtn) {
+      signOutBtn.disabled = true;
+      signOutBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Signing out...</span>';
+      if (window.lucide) lucide.createIcons();
+    }
+
+    try {
+      const { error } = await this.storage.signOut();
+      if (error) {
+        console.warn("Supabase auth signOut error:", error);
+        // Do not blindly clear local state while leaving an active SDK session behind.
+        // Re-check the actual SDK session to make the UI accurately reflect the resulting session state.
+        try {
+          const { data } = await this.storage.getSession();
+          this.cashierSession = data && data.session ? data.session : null;
+          this.cashierUser = this.cashierSession ? this.cashierSession.user : null;
+        } catch (sessErr) {
+          console.warn("Failed to re-check session after signOut error:", sessErr);
+        }
+        this.updateCashierAuthUi();
+
+        const errMsg = error.message || 'Sign out encountered a network or server error.';
+        if (alertBox) {
+          alertBox.className = 'text-xs p-2.5 rounded-xl border bg-rose-950/60 border-rose-500/50 text-rose-300 block';
+          alertBox.textContent = `Sign out failed: ${errMsg}`;
+        }
+        this.showToast(`Sign out failed: ${errMsg}`, 'error');
+        return;
+      }
+
+      this.cashierSession = null;
+      this.cashierUser = null;
+      this.updateCashierAuthUi();
+      this.showToast('Cashier signed out successfully', 'info');
+      setTimeout(() => this.closeCashierLoginModal(), 300);
+    } catch (err) {
+      console.warn("Unexpected exception during cashier sign out:", err);
+      try {
+        const { data } = await this.storage.getSession();
+        this.cashierSession = data && data.session ? data.session : null;
+        this.cashierUser = this.cashierSession ? this.cashierSession.user : null;
+      } catch (sessErr) {}
+      this.updateCashierAuthUi();
+
+      const errMsg = err.message || 'An unexpected error occurred during sign out.';
+      if (alertBox) {
+        alertBox.className = 'text-xs p-2.5 rounded-xl border bg-rose-950/60 border-rose-500/50 text-rose-300 block';
+        alertBox.textContent = `Sign out failed: ${errMsg}`;
+      }
+      this.showToast(errMsg, 'error');
+    } finally {
+      if (signOutBtn) {
+        signOutBtn.disabled = false;
+        signOutBtn.innerHTML = '<i data-lucide="log-out" class="w-4 h-4"></i><span>Sign Out Cashier</span>';
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+  }
+
+  canModifyCart() {
+    if (this.pendingCheckoutRecord && (this.pendingCheckoutRecord.transactionStatus === 'uncertain' || this.pendingCheckoutRecord.transactionStatus === 'pending')) {
+      this.sound.playWarningBeep();
+      this.showToast(`Cannot modify cart: Checkout "${this.pendingCheckoutRecord.checkoutId}" is pending server confirmation. Please retry or resolve it first.`, "warning");
+      return false;
+    }
+    return true;
+  }
+
+  restorePendingCheckout() {
+    try {
+      const raw = localStorage.getItem('autoparts_active_checkout_v1');
+      const lastReceipt = this.storage.getLastCompletedReceipt ? this.storage.getLastCompletedReceipt() : null;
+
+      if (!raw) return;
+      const pending = JSON.parse(raw);
+      if (!pending || !pending.checkoutId) return;
+
+      // Safe recovery: If this pending checkout was actually already completed and stored as the last receipt,
+      // recover it directly and prevent accidental double checkout prompts!
+      if (lastReceipt && lastReceipt.checkoutId === pending.checkoutId) {
+        console.log(`✅ Pending checkout ${pending.checkoutId} was already completed. Restoring receipt.`);
+        try {
+          localStorage.removeItem('autoparts_active_checkout_v1');
+        } catch (e) {}
+        this.pendingCheckoutRecord = null;
+        this.currentCheckoutId = null;
+        this.cart = [];
+        this.renderCartDrawer();
+        this.openReceiptModal(lastReceipt);
+        this.showToast("Restored completed sale voucher.", "success");
+        return;
+      }
+
+      if (pending.transactionStatus === 'uncertain' || pending.transactionStatus === 'pending') {
+        this.currentCheckoutId = pending.checkoutId;
+        this.selectedPaymentMethod = pending.paymentMethod || 'CASH';
+        this.pendingCheckoutRecord = pending;
+
+        // If the in-memory cart was reset (e.g. on page reload/browser crash),
+        // restore items from the immutable items of the pending payload
+        if ((!this.cart || this.cart.length === 0) && Array.isArray(pending.immutableItems) && pending.immutableItems.length > 0) {
+          this.cart = pending.immutableItems.map(item => {
+            const matched = (this.products || []).find(p => p.id === item.partId);
+            return {
+              id: item.partId,
+              part: matched || { name: item.name || 'Auto Part', partNumber: item.partNumber || 'SKU' },
+              quantity: item.quantity,
+              sellingPrice: item.sellingPrice,
+              itemTotal: item.lineTotal || Math.round(item.quantity * item.sellingPrice * 100) / 100
+            };
+          });
+          this.renderCartDrawer();
+        }
+
+        console.warn(`⚠️ Unresolved checkout restored: ${pending.checkoutId} (Status: ${pending.transactionStatus})`);
+        this.showToast(`Unresolved checkout ${pending.checkoutId} restored. Click "Complete Sale" to retry safely.`, "warning");
+      }
+    } catch (e) {
+      console.error("Error restoring pending checkout:", e);
+    }
+  }
+
+  openLastReceipt() {
+    const receipt = this.storage.getLastCompletedReceipt ? this.storage.getLastCompletedReceipt() : null;
+    if (!receipt) {
+      this.sound.playClick();
+      this.showToast("No recent receipt found in this session.", "info");
+      return;
+    }
+    this.openReceiptModal(receipt);
+    this.sound.playClick();
+  }
+
+  updateCartItemQuantity(partId, delta) {
+    if (!this.canModifyCart()) return;
+    const itemIndex = this.cart.findIndex(i => i.id === partId);
+    if (itemIndex === -1) return;
+
+    const item = this.cart[itemIndex];
+    if (!item || !item.part) {
+      this.removeFromCart(partId);
+      return;
+    }
+
+    const totalStock = Math.max(0, parseInt(this.inventoryManager.getTotalStock(item.part), 10) || 0);
+    const currentQty = this.sanitizeQuantity(item.quantity);
+    const step = parseInt(delta, 10);
+    if (Number.isNaN(step) || step === 0) return;
+
+    const newQty = currentQty + step;
+
+    // Decrementing from 1 removes the item from the cart safely and clearly
+    if (newQty <= 0) {
+      this.removeFromCart(partId);
+      return;
+    }
+
+    if (newQty > totalStock) {
+      this.sound.playWarningBeep();
+      this.showToast(`Stock limit reached! Cannot add more "${item.part.name || 'item'}" (Only ${totalStock} available across all floors).`, "warning");
+      return;
+    }
+
+    // Validate selling price integrity
+    const priceVal = this.validateSellingPrice(item.sellingPrice);
+    if (!priceVal.isValid) {
+      this.sound.playWarningBeep();
+      this.showToast(`Cannot update quantity: Invalid selling price on "${item.part.name || 'item'}" (${priceVal.reason}).`, "error");
+      return;
+    }
+
+    item.quantity = newQty;
+    item.sellingPrice = priceVal.price;
+    item.itemTotal = Math.round(newQty * priceVal.price * 100) / 100;
+    this.renderCartDrawer();
+    this.sound.playClick();
+  }
+
+  removeFromCart(partId) {
+    if (!this.canModifyCart()) return;
+    const removedItem = this.cart.find(i => i.id === partId);
+    const itemName = removedItem && removedItem.part && removedItem.part.name ? removedItem.part.name : 'Item';
+    this.cart = this.cart.filter(i => i.id !== partId);
+    this.renderCartDrawer();
+    this.sound.playClick();
+    this.showToast(`Removed "${itemName}" from cart`, "info");
+  }
+
+  clearCart() {
+    if (!this.canModifyCart()) return;
+    if (this.cart.length === 0) return;
+    this.cart = [];
+    this.renderCartDrawer();
+    this.sound.playClick();
+    this.showToast("Sales cart cleared", "info");
+  }
+
+  // --- POS CHECKOUT & DIGITAL RECEIPT (PHASE 5) ---
+  openCheckoutModal() {
+    if (!this.cart || this.cart.length === 0) {
+      this.sound.playWarningBeep();
+      this.showToast("Cannot checkout: Cart is empty", "warning");
+      return;
+    }
+
+    // Preserve existing pending / uncertain checkout identity
+    if (this.pendingCheckoutRecord && (this.pendingCheckoutRecord.transactionStatus === 'uncertain' || this.pendingCheckoutRecord.transactionStatus === 'pending')) {
+      this.currentCheckoutId = this.pendingCheckoutRecord.checkoutId;
+      this.selectedPaymentMethod = this.pendingCheckoutRecord.paymentMethod || 'CASH';
+    } else {
+      this.selectedPaymentMethod = this.selectedPaymentMethod || 'CASH';
+      if (!this.currentCheckoutId) {
+        this.currentCheckoutId = `chk_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      }
+    }
+
+    const modal = document.getElementById('pos-checkout-modal');
+    const itemsSummary = document.getElementById('checkout-items-summary');
+    const grandTotalEl = document.getElementById('checkout-grand-total');
+    const totalUnitsEl = document.getElementById('checkout-total-units');
+    const errorBanner = document.getElementById('checkout-error-banner');
+    const confirmBtn = document.getElementById('btn-confirm-pos-checkout');
+    const cancelBtn = document.getElementById('btn-cancel-checkout');
+
+    if (errorBanner) errorBanner.classList.add('hidden');
+    if (cancelBtn) cancelBtn.disabled = false;
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = `
+        <i data-lucide="check" class="w-4 h-4"></i>
+        <span>Confirm Sale & Print Receipt</span>
+      `;
+    }
+
+    const totalUnits = this.cart.reduce((sum, item) => sum + this.sanitizeQuantity(item.quantity), 0);
+    const grandTotal = this.cart.reduce((sum, item) => {
+      const qty = this.sanitizeQuantity(item.quantity);
+      const priceVal = this.validateSellingPrice(item.sellingPrice);
+      return sum + (qty * (priceVal.isValid ? priceVal.price : 0));
+    }, 0);
+    const cleanGrandTotal = Math.round(grandTotal * 100) / 100;
+
+    if (grandTotalEl) grandTotalEl.textContent = this.formatCurrency(cleanGrandTotal);
+    if (totalUnitsEl) totalUnitsEl.textContent = `${this.cart.length} distinct parts (${totalUnits} total units)`;
+
+    if (itemsSummary) {
+      itemsSummary.innerHTML = this.cart.map(item => {
+        const qty = this.sanitizeQuantity(item.quantity);
+        const priceVal = this.validateSellingPrice(item.sellingPrice);
+        const price = priceVal.isValid ? priceVal.price : 0;
+        const lineTotal = Math.round(qty * price * 100) / 100;
+        return `
+          <div class="flex items-center justify-between text-xs py-2 border-b border-slate-800/60 last:border-0">
+            <div class="flex-1 min-w-0 pr-2">
+              <div class="font-bold text-slate-100 truncate">${item.part ? item.part.name : 'Auto Part'}</div>
+              <div class="text-[10px] font-mono text-slate-400">${item.part ? item.part.partNumber : ''} &bull; ${qty}x @ ${this.formatCurrency(price)}</div>
+            </div>
+            <div class="font-mono font-bold text-emerald-400 shrink-0">
+              ${this.formatCurrency(lineTotal)}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    this.updatePaymentMethodUi();
+
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    this.sound.playClick();
+    if (window.lucide) lucide.createIcons();
+  }
+
+  selectPaymentMethod(method) {
+    if (this.isProcessingCheckout) return;
+    this.selectedPaymentMethod = (method === 'UPI') ? 'UPI' : 'CASH';
+    this.updatePaymentMethodUi();
+    this.sound.playClick();
+  }
+
+  updatePaymentMethodUi() {
+    const cashBtn = document.getElementById('btn-pay-cash');
+    const upiBtn = document.getElementById('btn-pay-upi');
+    if (!cashBtn || !upiBtn) return;
+
+    if (this.selectedPaymentMethod === 'CASH') {
+      cashBtn.className = "flex-1 p-3 rounded-xl border-2 border-emerald-500 bg-emerald-950/60 text-emerald-200 flex flex-col items-center gap-1 transition-all shadow-md shadow-emerald-950/40 cursor-pointer";
+      upiBtn.className = "flex-1 p-3 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-850 text-slate-400 flex flex-col items-center gap-1 transition-all cursor-pointer";
+    } else {
+      upiBtn.className = "flex-1 p-3 rounded-xl border-2 border-blue-500 bg-blue-950/60 text-blue-200 flex flex-col items-center gap-1 transition-all shadow-md shadow-blue-950/40 cursor-pointer";
+      cashBtn.className = "flex-1 p-3 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-850 text-slate-400 flex flex-col items-center gap-1 transition-all cursor-pointer";
+    }
+  }
+
+  closeCheckoutModal(force = false) {
+    if (this.isProcessingCheckout && !force) {
+      this.showToast("Checkout in progress, please wait...", "warning");
+      return;
+    }
+    const modal = document.getElementById('pos-checkout-modal');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+    // Only clear unsubmitted checkout ID. Closing the modal alone must NOT discard an uncertain transaction!
+    if (!this.pendingCheckoutRecord || (this.pendingCheckoutRecord.transactionStatus !== 'uncertain' && this.pendingCheckoutRecord.transactionStatus !== 'pending')) {
+      this.currentCheckoutId = null;
+    }
+  }
+
+  async executeCheckout() {
+    if (this.isProcessingCheckout) return;
+
+    // Session restoration race guard: wait for auth initialization to complete before checkout begins
+    if (this.authInitPromise) {
+      try {
+        await this.authInitPromise;
+      } catch (authErr) {
+        console.warn("Notice: Cashier auth initialization encountered an error:", authErr);
+      }
+    }
+
+    if (!this.cart || this.cart.length === 0) {
+      this.showToast("Cannot checkout an empty cart.", "error");
+      return;
+    }
+
+    const confirmBtn = document.getElementById('btn-confirm-pos-checkout');
+    const cancelBtn = document.getElementById('btn-cancel-checkout');
+    const errorBanner = document.getElementById('checkout-error-banner');
+    const errorText = document.getElementById('checkout-error-text');
+
+    this.isProcessingCheckout = true;
+    if (errorBanner) errorBanner.classList.add('hidden');
+
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = `
+        <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+        <span>Processing Sale...</span>
+      `;
+    }
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    // Use or preserve exact deterministic checkoutId and payload
+    let payload;
+    let immutableItems;
+
+    if (this.pendingCheckoutRecord && (this.pendingCheckoutRecord.transactionStatus === 'uncertain' || this.pendingCheckoutRecord.transactionStatus === 'pending') && this.pendingCheckoutRecord.payload) {
+      // EXACT immutable payload retry
+      payload = this.pendingCheckoutRecord.payload;
+      immutableItems = this.pendingCheckoutRecord.immutableItems || [];
+      this.currentCheckoutId = this.pendingCheckoutRecord.checkoutId;
+      this.selectedPaymentMethod = this.pendingCheckoutRecord.paymentMethod || this.selectedPaymentMethod;
+    } else {
+      if (!this.currentCheckoutId) {
+        this.currentCheckoutId = `chk_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      }
+
+      immutableItems = this.cart.map(item => ({
+        partId: item.id,
+        name: item.part ? item.part.name : 'Auto Part',
+        partNumber: item.part ? item.part.partNumber : 'SKU',
+        quantity: this.sanitizeQuantity(item.quantity),
+        sellingPrice: this.validateSellingPrice(item.sellingPrice).price,
+        lineTotal: Math.round(this.sanitizeQuantity(item.quantity) * this.validateSellingPrice(item.sellingPrice).price * 100) / 100
+      }));
+
+      payload = {
+        checkoutId: this.currentCheckoutId,
+        paymentMethod: this.selectedPaymentMethod,
+        dateStr: new Date().toLocaleDateString('en-IN'),
+        timeStr: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        items: immutableItems.map(item => ({
+          partId: item.partId,
+          quantity: item.quantity,
+          sellingPrice: item.sellingPrice
+        }))
+      };
+
+      const payloadHash = this.storage.computePayloadHash ? this.storage.computePayloadHash(payload) : JSON.stringify(payload);
+      const pendingRecord = {
+        checkoutId: this.currentCheckoutId,
+        paymentMethod: this.selectedPaymentMethod,
+        payload,
+        immutableItems,
+        payloadHash,
+        creationTimestamp: Date.now(),
+        transactionStatus: 'pending'
+      };
+
+      try {
+        localStorage.setItem('autoparts_active_checkout_v1', JSON.stringify(pendingRecord));
+        this.pendingCheckoutRecord = pendingRecord;
+      } catch (e) {}
+    }
+
+    try {
+      const result = await this.storage.processCheckout(payload, this);
+
+      if (result.success) {
+        // Build receipt data
+        const receiptData = result.receipt || {};
+        receiptData.paymentMethod = receiptData.paymentMethod || this.selectedPaymentMethod;
+        receiptData.storeName = this.settings.storeName || "Decent Motor Accessories";
+        receiptData.checkoutId = receiptData.checkoutId || this.currentCheckoutId;
+        receiptData.dateStr = receiptData.dateStr || payload.dateStr;
+        receiptData.timeStr = receiptData.timeStr || payload.timeStr;
+
+        // Enrich receipt items from immutableItems (never trust current cart!)
+        if (!receiptData.items || receiptData.items.length === 0) {
+          receiptData.items = immutableItems.map(item => ({
+            partId: item.partId,
+            name: item.name,
+            partNumber: item.partNumber,
+            quantity: item.quantity,
+            unitPrice: item.sellingPrice,
+            lineTotal: item.lineTotal
+          }));
+        }
+
+        // Store completed receipt durably for receipt recovery
+        try {
+          localStorage.setItem('autoparts_last_completed_receipt_v1', JSON.stringify(receiptData));
+        } catch (e) {}
+
+        // Clear pending checkout record only after verified successful receipt
+        try {
+          localStorage.removeItem('autoparts_active_checkout_v1');
+        } catch (e) {}
+        this.pendingCheckoutRecord = null;
+        this.currentCheckoutId = null;
+
+        // Clear in-memory cart only upon verified database commit
+        this.cart = [];
+        this.renderCartDrawer();
+        this.closeCartDrawer();
+        this.closeCheckoutModal(true);
+
+        // Open Digital Receipt
+        try {
+          this.openReceiptModal(receiptData);
+        } catch (receiptRenderErr) {
+          console.error("Receipt rendering warning:", receiptRenderErr);
+        }
+        this.sound.playSaleChime();
+        this.showToast(`Sale completed successfully! (${receiptData.paymentMethod})`, "success");
+
+        this.renderProducts();
+        this.updateHeaderStats();
+        // If Daily Outflow ledger workspace is active or modal is open, refresh it immediately
+        if (this.workspace === 'outflow' || (document.getElementById('daily-outflow-modal') && !document.getElementById('daily-outflow-modal').classList.contains('hidden'))) {
+          this.renderOutflowTableWithFilter(this.currentOutflowFilter || 'today');
+        }
+      } else {
+        // Check if error is network / timeout / uncertain
+        if (result.isNetwork || result.code === 'NETWORK_ERROR') {
+          if (this.pendingCheckoutRecord) {
+            this.pendingCheckoutRecord.transactionStatus = 'uncertain';
+            try {
+              localStorage.setItem('autoparts_active_checkout_v1', JSON.stringify(this.pendingCheckoutRecord));
+            } catch (e) {}
+          }
+          console.warn("Uncertain checkout outcome:", result);
+          if (errorBanner && errorText) {
+            errorText.textContent = "Transaction unconfirmed due to network timeout. Click 'Retry Sale' to safely verify status using the same checkout ID.";
+            errorBanner.classList.remove('hidden');
+          }
+          this.sound.playWarningBeep();
+          this.showToast("Network timeout. Please retry with the same checkout ID.", "warning");
+
+          if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = `
+              <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+              <span>Retry Sale</span>
+            `;
+            if (window.lucide) lucide.createIcons();
+          }
+          if (cancelBtn) cancelBtn.disabled = false;
+        } else if (result.code === 'UNAUTHORIZED' || result.code === '42501') {
+          // Authentication failure: Cashier is not signed in or session expired
+          // Safely preserve pending checkout ID and payload for retry after sign-in!
+          console.warn("Cashier unauthenticated during checkout:", result);
+          this.cashierSession = null;
+          this.cashierUser = null;
+          this.updateCashierAuthUi();
+
+          if (errorBanner && errorText) {
+            errorText.textContent = result.error || "Cashier authentication required. Please sign in to complete sale.";
+            errorBanner.classList.remove('hidden');
+          }
+          this.sound.playWarningBeep();
+          this.showToast(result.error || "Cashier sign-in required", "warning");
+
+          // Do NOT show misleading generic "Retry Sale" action
+          if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = `
+              <i data-lucide="log-in" class="w-4 h-4"></i>
+              <span>Sign In to Complete Sale</span>
+            `;
+            if (window.lucide) lucide.createIcons();
+          }
+          if (cancelBtn) cancelBtn.disabled = false;
+
+          // Automatically prompt sign-in by opening login modal
+          this.openCashierLoginModal();
+        } else if (result.code === 'FORBIDDEN') {
+          // Inactive cashier or account not authorized in cashiers table
+          console.warn("Cashier account forbidden from checkout:", result);
+          if (errorBanner && errorText) {
+            errorText.textContent = result.error || "Your account is not authorized as an active cashier. Please contact store management.";
+            errorBanner.classList.remove('hidden');
+          }
+          this.sound.playWarningBeep();
+          this.showToast(result.error || "Account not authorized for counter checkout", "error");
+
+          // Do NOT show misleading "Retry Sale" action
+          if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = `
+              <i data-lucide="shield-alert" class="w-4 h-4"></i>
+              <span>Unauthorized Cashier</span>
+            `;
+            if (window.lucide) lucide.createIcons();
+          }
+          if (cancelBtn) cancelBtn.disabled = false;
+        } else {
+          // Definitively rejected (e.g. INSUFFICIENT_STOCK, PRICE_DRIFT, IDEMPOTENCY_PAYLOAD_MISMATCH):
+          // transaction rolled back before commit on server.
+          // Clear pending record and reset currentCheckoutId so user can fix cart and get fresh checkout ID.
+          try {
+            localStorage.removeItem('autoparts_active_checkout_v1');
+          } catch (e) {}
+          this.pendingCheckoutRecord = null;
+          this.currentCheckoutId = null;
+
+          console.warn("Checkout definitively rejected:", result);
+          if (errorBanner && errorText) {
+            errorText.textContent = result.error || "Sale failed. Please verify stock and prices.";
+            errorBanner.classList.remove('hidden');
+          }
+          this.sound.playWarningBeep();
+          this.showToast(result.error || "Checkout could not be processed.", "error");
+
+          if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = `
+              <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+              <span>Retry Sale</span>
+            `;
+            if (window.lucide) lucide.createIcons();
+          }
+          if (cancelBtn) cancelBtn.disabled = false;
+        }
+      }
+    } catch (err) {
+      console.error("Unexpected checkout exception:", err);
+      if (this.pendingCheckoutRecord) {
+        this.pendingCheckoutRecord.transactionStatus = 'uncertain';
+        try {
+          localStorage.setItem('autoparts_active_checkout_v1', JSON.stringify(this.pendingCheckoutRecord));
+        } catch (e) {}
+      }
+      if (errorBanner && errorText) {
+        errorText.textContent = "Unexpected connection error. Please click Retry to verify.";
+        errorBanner.classList.remove('hidden');
+      }
+      this.sound.playWarningBeep();
+      this.showToast("Network/execution error during checkout.", "error");
+
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = `
+          <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+          <span>Retry Sale</span>
+        `;
+        if (window.lucide) lucide.createIcons();
+      }
+      if (cancelBtn) cancelBtn.disabled = false;
+    } finally {
+      this.isProcessingCheckout = false;
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        if (!errorBanner || errorBanner.classList.contains('hidden')) {
+          confirmBtn.innerHTML = `
+            <i data-lucide="check" class="w-4 h-4"></i>
+            <span>Confirm Sale & Print Receipt</span>
+          `;
+          if (window.lucide) lucide.createIcons();
+        }
+      }
+      if (cancelBtn) cancelBtn.disabled = false;
+    }
+  }
+
+  openReceiptModal(receiptData) {
+    const modal = document.getElementById('pos-receipt-modal');
+    if (!modal) return;
+
+    const storeNameEl = document.getElementById('receipt-store-name');
+    const idEl = document.getElementById('receipt-id');
+    const datetimeEl = document.getElementById('receipt-datetime');
+    const paymentBadgeEl = document.getElementById('receipt-payment-badge');
+    const itemsTableBody = document.getElementById('receipt-items-tbody');
+    const totalUnitsEl = document.getElementById('receipt-total-units');
+    const grandTotalEl = document.getElementById('receipt-grand-total');
+
+    if (storeNameEl) storeNameEl.textContent = receiptData.storeName || this.settings.storeName || "Decent Motor Accessories";
+    if (idEl) idEl.textContent = receiptData.checkoutId || "RCP-" + Date.now();
+    
+    const formattedDate = receiptData.dateStr || new Date().toLocaleDateString('en-IN');
+    const formattedTime = receiptData.timeStr || new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    if (datetimeEl) datetimeEl.textContent = `${formattedDate} • ${formattedTime}`;
+
+    if (paymentBadgeEl) {
+      const pm = (receiptData.paymentMethod || 'CASH').toUpperCase();
+      paymentBadgeEl.textContent = pm === 'UPI' ? 'PAID VIA UPI' : 'PAID IN CASH';
+      paymentBadgeEl.className = pm === 'UPI' 
+        ? 'px-2.5 py-0.5 rounded-full text-[11px] font-black bg-blue-900/60 text-blue-300 border border-blue-500/50'
+        : 'px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-900/60 text-emerald-300 border border-emerald-500/50';
+    }
+
+    if (itemsTableBody && receiptData.items) {
+      itemsTableBody.innerHTML = receiptData.items.map(item => `
+        <tr class="border-b border-slate-800/80">
+          <td class="py-2 text-left">
+            <div class="font-bold text-slate-100 text-xs">${item.name || item.partName || 'Auto Part'}</div>
+            <div class="font-mono text-[10px] text-slate-400">${item.partNumber || ''}</div>
+          </td>
+          <td class="py-2 text-center font-mono text-xs">${item.quantity}</td>
+          <td class="py-2 text-right font-mono text-xs">${this.formatCurrency(item.unitPrice || item.sellingPrice || 0)}</td>
+          <td class="py-2 text-right font-mono font-bold text-xs text-emerald-400">${this.formatCurrency(item.lineTotal || (item.quantity * (item.unitPrice || item.sellingPrice || 0)))}</td>
+        </tr>
+      `).join('');
+    }
+
+    const calculatedTotalUnits = receiptData.itemsCount !== undefined
+      ? receiptData.itemsCount
+      : (receiptData.items ? receiptData.items.reduce((sum, i) => sum + (parseInt(i.quantity, 10) || 0), 0) : 0);
+    const calculatedGrandTotal = receiptData.totalAmount !== undefined
+      ? receiptData.totalAmount
+      : (receiptData.items ? receiptData.items.reduce((sum, i) => sum + (parseFloat(i.lineTotal) || ((parseInt(i.quantity, 10) || 0) * (parseFloat(i.unitPrice || i.sellingPrice) || 0))), 0) : 0);
+
+    if (totalUnitsEl) totalUnitsEl.textContent = `${calculatedTotalUnits} units`;
+    if (grandTotalEl) grandTotalEl.textContent = this.formatCurrency(calculatedGrandTotal);
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    try {
+      if (window.lucide) lucide.createIcons();
+    } catch (e) {}
+  }
+
+  closeReceiptModal() {
+    const modal = document.getElementById('pos-receipt-modal');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+    this.currentCheckoutId = null;
+    this.renderProducts();
+    this.updateHeaderStats();
+  }
+
+  printReceipt() {
+    window.print();
   }
 
   // Check if a part is designated for Upstairs storage (Floor 1 / Floor 2) vs Ground Floor
@@ -364,9 +1635,9 @@ class AutoPartsApp {
     if (tabLowStockCount) tabLowStockCount.textContent = lowStockCount;
     if (tabOutStockCount) tabOutStockCount.textContent = outOfStockCount;
 
-    // Today's Sales Counter
-    const todayStr = new Date().toLocaleDateString();
-    const todaySales = this.outflowLog.filter(s => s.dateStr === todayStr);
+    // Today's Sales Counter (Robust Timezone-Aware Matching)
+    const today = new Date();
+    const todaySales = this.outflowLog.filter(s => this.isMatchingOutflowDate(s.dateStr || s.timestamp, today));
     const todayTotalRevenue = todaySales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
     const todayItemCount = todaySales.reduce((acc, s) => acc + (s.quantity || 0), 0);
 
@@ -377,6 +1648,66 @@ class AutoPartsApp {
     if (elTodaySales) elTodaySales.textContent = `${todayItemCount} pcs sold today`;
     if (elTodayRev) elTodayRev.textContent = this.formatCurrency(todayTotalRevenue);
     if (navTodayRev) navTodayRev.textContent = this.formatCurrency(todayTotalRevenue);
+  }
+
+  // Robust locale-agnostic and timezone-aware calendar date comparison
+  isMatchingOutflowDate(recordDateStr, targetDate = new Date()) {
+    if (!recordDateStr) return false;
+    const str = String(recordDateStr).trim();
+    if (!str) return false;
+
+    // 1. Direct locale matches
+    if (str === targetDate.toLocaleDateString()) return true;
+    if (str === targetDate.toLocaleDateString('en-IN')) return true;
+    if (str === targetDate.toLocaleDateString('en-GB')) return true;
+    if (str === targetDate.toLocaleDateString('en-US')) return true;
+
+    const timeZone = 'Asia/Kolkata';
+    let targetYMD;
+    try {
+      targetYMD = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(targetDate);
+    } catch (e) {
+      targetYMD = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
+    }
+    const [tY, tM, tD] = targetYMD.split('-').map(Number);
+
+    // 2. ISO format YYYY-MM-DD or full timestamp
+    const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+      if (str.includes('T')) {
+        const parsed = new Date(str);
+        if (!isNaN(parsed.getTime())) {
+          try {
+            const recYMD = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed);
+            return recYMD === targetYMD;
+          } catch (e) {}
+        }
+      }
+      return Number(isoMatch[1]) === tY && Number(isoMatch[2]) === tM && Number(isoMatch[3]) === tD;
+    }
+
+    // 3. Delimited D/M/Y or M/D/Y (e.g. 2/11/2026, 02/11/2026, 11/2/2026)
+    const slashMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (slashMatch) {
+      const p1 = Number(slashMatch[1]);
+      const p2 = Number(slashMatch[2]);
+      const pYear = Number(slashMatch[3]);
+      if (pYear !== tY) return false;
+      // D/M/Y (Indian standard: p1=day, p2=month)
+      if (p1 === tD && p2 === tM) return true;
+      // M/D/Y (US locale standard: p1=month, p2=day)
+      if (p1 === tM && p2 === tD) return true;
+    }
+
+    // 4. Fallback timestamp attempt
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      try {
+        const recYMD = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed);
+        return recYMD === targetYMD;
+      } catch (e) {}
+    }
+    return false;
   }
 
   // Compact Single-Row Horizontal Brand Chips Ribbon
@@ -710,26 +2041,91 @@ class AutoPartsApp {
     this.inventoryManager.renderProducts();
   }
 
-  // Barcode Scan Handler
+  // Barcode Scan Handler (Phase 4: With Strict Price & Quantity Integrity)
   handleBarcodeScanned(barcode, source = 'Scanner') {
+    if (!this.canModifyCart()) return;
     if (!barcode) return;
     const cleanCode = barcode.trim();
+    if (!cleanCode) return;
 
+    // Prevent accidental hardware scanner debounce / double-event bounces (< 250ms)
+    const now = Date.now();
+    if (this.lastScannedBarcode === cleanCode && (now - this.lastScanTime < 250)) {
+      console.warn(`[Scanner] Ignored bounce duplicate scan for "${cleanCode}" within ${now - this.lastScanTime}ms`);
+      return;
+    }
+    this.lastScannedBarcode = cleanCode;
+    this.lastScanTime = now;
+
+    // 1. Identify product from catalog by barcode or part number (case-insensitive)
     const matchedPart = this.products.find(p =>
       (p.barcode && p.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
-      p.partNumber.toLowerCase() === cleanCode.toLowerCase()
+      (p.partNumber && p.partNumber.toLowerCase() === cleanCode.toLowerCase())
     );
 
-    if (matchedPart) {
-      this.inventoryManager.sellPart(matchedPart.id, 1);
-      if (this.scannerEngine && this.scannerEngine.showLastScannedFeedback) {
-        this.scannerEngine.showLastScannedFeedback(matchedPart, 1);
-      }
-      this.showToast(`[${source}] Auto-Sold 1x ${matchedPart.name}`, "success");
-    } else {
+    // 2. Product not found: show clear error message, play warning beep, do NOT add to cart
+    if (!matchedPart) {
       this.sound.playWarningBeep();
       this.showToast(`Unrecognized Barcode "${cleanCode}". Part not found in catalog!`, "error");
+      return;
     }
+
+    // 3. Check physical stock across all floors: if zero available stock, reject with clear message
+    const totalStock = Math.max(0, parseInt(this.inventoryManager.getTotalStock(matchedPart), 10) || 0);
+    if (totalStock <= 0) {
+      this.sound.playWarningBeep();
+      this.showToast(`Out of Stock! "${matchedPart.name}" has 0 units available across all floors.`, "warning");
+      return;
+    }
+
+    // 4. Validate Selling-Price Integrity (Task 3: Reject missing, null, empty, non-numeric, <= 0 prices)
+    const priceVal = this.validateSellingPrice(matchedPart.sellingPrice);
+    if (!priceVal.isValid) {
+      this.sound.playWarningBeep();
+      this.showToast(`Cannot add "${matchedPart.name}" to cart: Invalid selling price (${priceVal.reason}). Please set valid price in catalog.`, "error");
+      return;
+    }
+    const validPrice = priceVal.price;
+
+    // 5. In-Memory Cart Addition: repeated scans increase quantity rather than creating duplicate rows
+    const existingItemIndex = this.cart.findIndex(i => i.id === matchedPart.id);
+    const currentQtyInCart = existingItemIndex >= 0 ? this.sanitizeQuantity(this.cart[existingItemIndex].quantity) : 0;
+
+    if (currentQtyInCart + 1 > totalStock) {
+      this.sound.playWarningBeep();
+      this.showToast(`Stock limit reached! Cannot add more "${matchedPart.name}" (Available: ${totalStock}, In Cart: ${currentQtyInCart}).`, "warning");
+      this.openCartDrawer();
+      return;
+    }
+
+    if (existingItemIndex >= 0) {
+      const newQty = currentQtyInCart + 1;
+      this.cart[existingItemIndex].quantity = newQty;
+      this.cart[existingItemIndex].sellingPrice = validPrice;
+      this.cart[existingItemIndex].itemTotal = Math.round(newQty * validPrice * 100) / 100;
+    } else {
+      this.cart.push({
+        id: matchedPart.id,
+        part: matchedPart,
+        quantity: 1,
+        sellingPrice: validPrice,
+        itemTotal: validPrice
+      });
+    }
+
+    // 6. Update and display cart drawer immediately
+    this.renderCartDrawer();
+    this.openCartDrawer();
+    this.sound.playClick();
+
+    // 7. Provide clear, non-intrusive feedback
+    const updatedItem = this.cart.find(i => i.id === matchedPart.id);
+    const qtyInCart = updatedItem ? updatedItem.quantity : 1;
+
+    if (this.scannerEngine && this.scannerEngine.showLastScannedFeedback) {
+      this.scannerEngine.showLastScannedFeedback(matchedPart, qtyInCart, 'cart');
+    }
+    this.showToast(`[${source}] Added to Cart: ${matchedPart.name} (${qtyInCart}x in cart)`, "success");
   }
 
   // Voice Search Handler
@@ -1211,7 +2607,8 @@ class AutoPartsApp {
       movedCount += qty;
     });
 
-    this.saveProducts();
+    const affectedIds = groundParts.map(p => p.id);
+    this.saveProducts(affectedIds.length > 0 ? affectedIds : null);
     this.sound.playTransferChime();
     this.showToast(`Restocked all ${movedCount} returned items from ground counter to their upstairs racks!`, "success");
     this.renderProducts();
@@ -1241,23 +2638,22 @@ class AutoPartsApp {
   }
 
   renderOutflowTableWithFilter(dateFilter = 'today') {
+    this.currentOutflowFilter = dateFilter;
     const tbody = document.getElementById('outflow-log-tbody');
     const totalEl = document.getElementById('modal-outflow-total-rev') || document.getElementById('modal-today-revenue');
     const totalItemsEl = document.getElementById('modal-outflow-total-items') || document.getElementById('modal-today-units');
     const totalCountEl = document.getElementById('modal-outflow-total-count');
 
     this.outflowLog = this.storage.getOutflows();
-    const todayStr = new Date().toLocaleDateString();
-    
+    const today = new Date();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toLocaleDateString();
 
     let filtered = this.outflowLog;
     if (dateFilter === 'today') {
-      filtered = this.outflowLog.filter(l => l.dateStr === todayStr);
+      filtered = this.outflowLog.filter(l => this.isMatchingOutflowDate(l.dateStr || l.timestamp, today));
     } else if (dateFilter === 'yesterday') {
-      filtered = this.outflowLog.filter(l => l.dateStr === yesterdayStr);
+      filtered = this.outflowLog.filter(l => this.isMatchingOutflowDate(l.dateStr || l.timestamp, yesterday));
     }
 
     const totalRevenue = filtered.reduce((acc, l) => acc + (Number(l.totalAmount) || 0), 0);
@@ -2124,6 +3520,142 @@ class AutoPartsApp {
         if (rollbackBtn) {
           const snapId = rollbackBtn.dataset.snapshotId;
           this.priceRevisionManager.rollbackPriceSnapshot(snapId);
+        }
+      });
+    }
+
+    // POS Cart Drawer Controls (Phase 2 Visual Prototype Shell)
+    const openCartBtn = document.getElementById('open-cart-drawer-btn');
+    if (openCartBtn) {
+      openCartBtn.addEventListener('click', () => this.toggleCartDrawer());
+    }
+
+    const closeCartBtn = document.getElementById('close-cart-drawer-btn');
+    if (closeCartBtn) {
+      closeCartBtn.addEventListener('click', () => this.closeCartDrawer());
+    }
+
+    const cartBackdrop = document.getElementById('cart-drawer-backdrop');
+    if (cartBackdrop) {
+      cartBackdrop.addEventListener('click', () => this.closeCartDrawer());
+    }
+
+    // Cart Drawer Clear Button (Phase 3 In-Memory Cart)
+    const clearCartBtn = document.getElementById('btn-clear-cart');
+    if (clearCartBtn) {
+      clearCartBtn.addEventListener('click', () => this.clearCart());
+    }
+
+    // POS Complete Sale Checkout Trigger Button
+    const completeSaleBtn = document.getElementById('btn-complete-sale');
+    if (completeSaleBtn) {
+      completeSaleBtn.addEventListener('click', () => this.openCheckoutModal());
+    }
+
+    // Checkout Confirmation Modal Controls
+    const closeCheckoutBtn = document.getElementById('close-checkout-modal-btn');
+    if (closeCheckoutBtn) {
+      closeCheckoutBtn.addEventListener('click', () => this.closeCheckoutModal());
+    }
+
+    const cancelCheckoutBtn = document.getElementById('btn-cancel-checkout');
+    if (cancelCheckoutBtn) {
+      cancelCheckoutBtn.addEventListener('click', () => this.closeCheckoutModal());
+    }
+
+    const payCashBtn = document.getElementById('btn-pay-cash');
+    if (payCashBtn) {
+      payCashBtn.addEventListener('click', () => this.selectPaymentMethod('CASH'));
+    }
+
+    const payUpiBtn = document.getElementById('btn-pay-upi');
+    if (payUpiBtn) {
+      payUpiBtn.addEventListener('click', () => this.selectPaymentMethod('UPI'));
+    }
+
+    const confirmCheckoutBtn = document.getElementById('btn-confirm-pos-checkout');
+    if (confirmCheckoutBtn) {
+      confirmCheckoutBtn.addEventListener('click', () => this.executeCheckout());
+    }
+
+    // Digital Receipt Modal Controls
+    const closeReceiptBtn = document.getElementById('btn-close-receipt');
+    if (closeReceiptBtn) {
+      closeReceiptBtn.addEventListener('click', () => this.closeReceiptModal());
+    }
+
+    const printReceiptBtn = document.getElementById('btn-print-receipt');
+    if (printReceiptBtn) {
+      printReceiptBtn.addEventListener('click', () => this.printReceipt());
+    }
+
+    const viewLastReceiptBtn = document.getElementById('btn-view-last-receipt');
+    if (viewLastReceiptBtn) {
+      viewLastReceiptBtn.addEventListener('click', () => this.openLastReceipt());
+    }
+
+    // Cashier Authentication Modal Controls
+    const cashierAuthBadge = document.getElementById('cashier-auth-badge');
+    if (cashierAuthBadge) {
+      cashierAuthBadge.addEventListener('click', () => this.openCashierLoginModal());
+    }
+
+    const closeCashierModalBtn = document.getElementById('close-cashier-modal-btn');
+    if (closeCashierModalBtn) {
+      closeCashierModalBtn.addEventListener('click', () => this.closeCashierLoginModal());
+    }
+
+    const cancelCashierModalBtn = document.getElementById('btn-cancel-cashier-modal');
+    if (cancelCashierModalBtn) {
+      cancelCashierModalBtn.addEventListener('click', () => this.closeCashierLoginModal());
+    }
+
+    const cashierLoginForm = document.getElementById('cashier-login-form');
+    if (cashierLoginForm) {
+      cashierLoginForm.addEventListener('submit', (e) => this.handleCashierSignIn(e));
+    }
+
+    const cashierSignOutBtn = document.getElementById('btn-cashier-sign-out');
+    if (cashierSignOutBtn) {
+      cashierSignOutBtn.addEventListener('click', () => this.handleCashierSignOut());
+    }
+
+    // Settings Modal Cashier Account Controls
+    const settingsCashierLoginBtn = document.getElementById('btn-settings-cashier-login');
+    if (settingsCashierLoginBtn) {
+      settingsCashierLoginBtn.addEventListener('click', () => {
+        if (this.settingsManager) {
+          this.settingsManager.closeSettingsModal();
+        }
+        this.openCashierLoginModal();
+      });
+    }
+
+    const settingsCashierSignOutBtn = document.getElementById('btn-settings-cashier-signout');
+    if (settingsCashierSignOutBtn) {
+      settingsCashierSignOutBtn.addEventListener('click', () => this.handleCashierSignOut());
+    }
+
+    // Cart Items Container Event Delegation for Quantity +/- and Remove Buttons
+    const cartItemsContainer = document.getElementById('cart-items-container');
+    if (cartItemsContainer) {
+      cartItemsContainer.addEventListener('click', (e) => {
+        const decBtn = e.target.closest('.cart-qty-dec');
+        if (decBtn && decBtn.dataset.partId) {
+          this.updateCartItemQuantity(decBtn.dataset.partId, -1);
+          return;
+        }
+
+        const incBtn = e.target.closest('.cart-qty-inc');
+        if (incBtn && incBtn.dataset.partId) {
+          this.updateCartItemQuantity(incBtn.dataset.partId, 1);
+          return;
+        }
+
+        const removeBtn = e.target.closest('.cart-remove-item-btn');
+        if (removeBtn && removeBtn.dataset.partId) {
+          this.removeFromCart(removeBtn.dataset.partId);
+          return;
         }
       });
     }

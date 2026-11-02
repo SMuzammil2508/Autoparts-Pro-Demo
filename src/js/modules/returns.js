@@ -48,7 +48,7 @@ export class ReturnsManager {
     if (!part) return;
 
     part.stockGroundFloor = (Number(part.stockGroundFloor) || 0) + 1;
-    this.app.saveProducts();
+    this.app.saveProducts([part.id]);
     this.app.sound.playTransferChime();
 
     const isUpstairs = this.app.isUpstairsPart ? this.app.isUpstairsPart(part) : true;
@@ -380,7 +380,7 @@ export class ReturnsManager {
       const part = this.app.products.find(p => p.id === claimRecord.partId || p.partNumber === claimRecord.partNumber);
       if (part) {
         part.stockFloor1 = (Number(part.stockFloor1) || 0) + (Number(claimRecord.quantity) || 1);
-        this.app.saveProducts();
+        this.app.saveProducts([part.id]);
         this.app.showToast(`Claim settled & added ${claimRecord.quantity || 1}x fresh replacement into Floor 1 stock!`, "success");
       }
     } else {
@@ -416,7 +416,7 @@ export class ReturnsManager {
       part.stockFloor1 = (Number(part.stockFloor1) || 0) + 1;
     }
 
-    this.app.saveProducts();
+    this.app.saveProducts([part.id]);
     this.app.sound.playTransferChime();
     this.app.showToast(`Restocked 1 unit of "${part.name}" to ${part.rackLocation || (isFloor2 ? 'Floor 2' : 'Floor 1')}`, "success");
     this.app.renderProducts();
